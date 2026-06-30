@@ -1,0 +1,83 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --font-display: "Chakra Petch", monospace;
+  --font-mono: "JetBrains Mono", monospace;
+  --font-sans: "DM Sans", system-ui, sans-serif;
+}
+
+html, body {
+  background: #070A12;
+  color: #C7D2E0;
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Atmospheric grid + radial glow on the void background */
+.ioc-bg {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-color: #070A12;
+  background-image:
+    radial-gradient(900px 600px at 78% -5%, rgba(91,140,255,0.10), transparent 60%),
+    radial-gradient(700px 500px at 12% 110%, rgba(57,224,166,0.07), transparent 60%),
+    linear-gradient(to right, rgba(42,58,82,0.18) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(42,58,82,0.18) 1px, transparent 1px);
+  background-size: 100% 100%, 100% 100%, 40px 40px, 40px 40px;
+}
+
+/* Slow scanline sweep for the SOC feel */
+.ioc-scan {
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  overflow: hidden;
+  opacity: 0.5;
+}
+.ioc-scan::before {
+  content: "";
+  position: absolute;
+  left: 0; right: 0; height: 38%;
+  background: linear-gradient(to bottom, transparent, rgba(91,140,255,0.05), transparent);
+  animation: scan 6s linear infinite;
+}
+
+/* Fine grain overlay */
+.ioc-grain {
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  opacity: 0.04;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+.panel-edge {
+  border: 1px solid rgba(42,58,82,0.7);
+  background: linear-gradient(180deg, rgba(17,24,39,0.9), rgba(12,17,29,0.92));
+  backdrop-filter: blur(6px);
+}
+
+.kicker {
+  font-family: var(--font-mono);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  font-size: 10px;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #1E293B; border-radius: 8px; }
+::-webkit-scrollbar-thumb:hover { background: #2A3A52; }
+
+/* JSON token rendering */
+.tok-key { color: #5B8CFF; }
+.tok-str { color: #39E0A6; }
+.tok-act { color: #9B7CFF; }
+.tok-punc { color: #5B6B85; }
