@@ -1,0 +1,39 @@
+# Render blueprint for the Atlas Service Desk orchestrator (Part One).
+# Deploys in demo mode immediately; flips to live when the marked env vars are set.
+services:
+  - type: web
+    name: atlas-orchestrator
+    runtime: python
+    rootDir: apps/orchestrator
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /healthz
+    envVars:
+      - key: OKTA_DOMAIN
+        value: oktaforai.oktapreview.com
+      # --- set these to flip from demo to LIVE (sync:false = set in dashboard, not committed) ---
+      - key: INTAKE_AGENT_ID
+        value: wlp10qjmsgdQROgxE1d8
+      - key: DEVOPS_AGENT_ID
+        value: wlp10qjml8mNlyBVK1d8
+      - key: A2A_CAS_ISSUER
+        value: https://oktaforai.oktapreview.com/oauth2/aus10rq0j6dqzBIY51d8
+      - key: A2A_AUDIENCE
+        value: https://atlas.acme.example/resolution
+      - key: A2A_SCOPE
+        value: agent.invoke
+      - key: INTAKE_PRIVATE_JWK
+        sync: false
+      - key: DEVOPS_PRIVATE_JWK
+        sync: false
+      - key: JIRA_SECRET_RESOURCE_ORN
+        sync: false
+      - key: JIRA_BASE_URL
+        sync: false
+      - key: ATLASSIAN_EMAIL
+        sync: false
+      - key: JIRA_PROJECT_KEY
+        value: ITSD
+      - key: ANTHROPIC_API_KEY
+        sync: false
