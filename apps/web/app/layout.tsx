@@ -1,36 +1,32 @@
 import type { Metadata } from "next";
-import { Chakra_Petch, JetBrains_Mono, DM_Sans } from "next/font/google";
+import { Hanken_Grotesk, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
+import Sidebar from "@/components/Sidebar";
 
-const display = Chakra_Petch({
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
-  variable: "--font-display",
-});
-const mono = JetBrains_Mono({
-  subsets: ["latin"],
-  weight: ["400", "500", "700"],
-  variable: "--font-mono",
-});
-const sans = DM_Sans({
+const sans = Hanken_Grotesk({
   subsets: ["latin"],
   weight: ["400", "500", "600", "700"],
   variable: "--font-sans",
 });
+const mono = JetBrains_Mono({
+  subsets: ["latin"],
+  weight: ["400", "500"],
+  variable: "--font-mono",
+});
 
 export const metadata: Metadata = {
-  title: "Atlas Identity Operations Center",
-  description: "Okta-secured agentic IT support — chain of custody at every hop.",
+  title: "Atlas Service Desk",
+  description: "Autonomous IT support, secured by Okta.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={`${display.variable} ${mono.variable} ${sans.variable}`}>
-      <body>
-        <div className="ioc-bg" />
-        <div className="ioc-scan" />
-        <div className="ioc-grain" />
-        <div className="relative z-10">{children}</div>
+    <html lang="en" className={`${sans.variable} ${mono.variable}`}>
+      <body className="bg-bg text-body">
+        <div className="flex min-h-screen">
+          <Sidebar />
+          <main className="flex-1 min-w-0">{children}</main>
+        </div>
       </body>
     </html>
   );
