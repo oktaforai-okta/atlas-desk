@@ -5,31 +5,31 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        // Atlas Service Desk — refined professional dark (Linear/Vercel grade)
+        // Atlas Service Desk — refined dark, tuned for projector legibility (brighter text, borders, accents)
         bg: "#0B0E13",
-        panel: "#0F131A",
-        surface: "#12161D",
-        raised: "#161B24",
-        line: "#1E242E",
-        line2: "#2A323F",
-        mute: "#6B7689",
-        soft: "#8B95A6",
-        body: "#A8B2C0",
-        ink: "#D6DCE6",
-        bright: "#EEF2F8",
-        accent: "#5B8CFF",   // single professional accent
-        ok: "#3FB97A",       // resolved
-        warn: "#E0A23D",     // in progress
-        bad: "#E5484D",      // failed / denied
-        triage: "#5B8CFF",   // Atlas Triage identity
-        resolve: "#3FB97A",  // Atlas Resolution identity
+        panel: "#10141C",
+        surface: "#141A23",
+        raised: "#1A212C",
+        line: "#2A323F",     // visible separators when projected
+        line2: "#3A4456",
+        mute: "#8B96A8",     // secondary text — readable on a projector
+        soft: "#AAB4C3",
+        body: "#C7D0DD",     // primary reading text
+        ink: "#E4E9F1",
+        bright: "#F5F8FC",
+        accent: "#7AA2FF",   // brighter professional blue
+        ok: "#4ED492",       // resolved (brighter green)
+        warn: "#F2B450",     // in progress
+        bad: "#FF6168",      // failed / denied
+        triage: "#7AA2FF",   // Atlas Triage identity
+        resolve: "#4ED492",  // Atlas Resolution identity
       },
       fontFamily: {
         sans: ["var(--font-sans)", "system-ui", "sans-serif"],
         mono: ["var(--font-mono)", "ui-monospace", "monospace"],
       },
       fontSize: {
-        "2xs": ["10px", "14px"],
+        "2xs": ["12px", "16px"],
       },
     },
   },

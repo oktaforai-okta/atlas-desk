@@ -7,15 +7,15 @@ function Hop({ n, title, who, children }: { n: string; title: string; who: strin
   return (
     <div className="flex gap-4">
       <div className="flex flex-col items-center">
-        <span className="flex h-7 w-7 items-center justify-center rounded-full border border-line2 bg-raised font-mono text-[11px] text-soft">
+        <span className="flex h-7 w-7 items-center justify-center rounded-full border border-line2 bg-raised font-mono text-[13px] text-soft">
           {n}
         </span>
         <span className="mt-1 w-px flex-1 bg-line" />
       </div>
       <div className="flex-1 pb-7">
-        <div className="text-[14px] font-semibold text-bright">{title}</div>
-        <div className="mt-0.5 font-mono text-[11px] text-accent">{who}</div>
-        <div className="mt-2 text-[13px] leading-relaxed text-body">{children}</div>
+        <div className="text-[16px] font-semibold text-bright">{title}</div>
+        <div className="mt-0.5 font-mono text-[13px] text-accent">{who}</div>
+        <div className="mt-2 text-[15px] leading-relaxed text-body">{children}</div>
       </div>
     </div>
   );
@@ -25,18 +25,18 @@ export default function HowItWorks() {
   return (
     <div className="mx-auto max-w-3xl px-8 py-8">
       <div className="text-2xs uppercase tracking-wider text-accent">Deep dive</div>
-      <h1 className="mt-1 text-[22px] font-bold text-bright">How Atlas is secured by Okta</h1>
-      <p className="mt-2 text-[14px] leading-relaxed text-body">
+      <h1 className="mt-1 text-[26px] font-bold text-bright">How Atlas is secured by Okta</h1>
+      <p className="mt-2 text-[16px] leading-relaxed text-body">
         On the Service Desk you watched two AI agents triage a ticket and file it to Jira with no human in
         the loop. Underneath, every hop is a governed Okta identity with a verifiable chain of custody.
         Here is exactly how it comes together, and what Okta provides at each layer.
       </p>
 
       {/* the autonomous chain */}
-      <h2 className="mt-9 flex items-center gap-2 text-[15px] font-semibold text-bright">
+      <h2 className="mt-9 flex items-center gap-2 text-[17px] font-semibold text-bright">
         <Bot className="h-4 w-4 text-accent" /> The autonomous flow (agent-to-agent)
       </h2>
-      <p className="mt-1.5 text-[13px] text-soft">
+      <p className="mt-1.5 text-[15px] text-soft">
         No user is present. Authority flows machine-to-machine, and every token records who acted on whose behalf.
       </p>
 
@@ -45,13 +45,13 @@ export default function HowItWorks() {
           A ticket lands from the external ticketing system via API. No human, no session.
         </Hop>
         <Hop n="2" title="Atlas Triage authenticates" who="Atlas Triage · workload identity (wlp…)">
-          The triage agent authenticates to Okta with its own key (<span className="font-mono text-[12px] text-ink">private_key_jwt</span>),
+          The triage agent authenticates to Okta with its own key (<span className="font-mono text-[14px] text-ink">private_key_jwt</span>),
           then uses an LLM to classify the ticket and choose the destination team. It has a real identity in
           Okta Universal Directory — not a shared service account.
         </Hop>
         <Hop n="3" title="Agent-to-agent delegation" who="Atlas Triage → Atlas Resolution">
           Triage invokes the resolution agent over Okta&apos;s agent-to-agent flow (machine context, scope{" "}
-          <span className="font-mono text-[12px] text-ink">agent.invoke</span>). The issued token carries an{" "}
+          <span className="font-mono text-[14px] text-ink">agent.invoke</span>). The issued token carries an{" "}
           <span className="tok-act font-semibold">act</span> claim, the verifiable record that Triage delegated to
           Resolution. This is the chain of custody.
           <div className="mt-3">
@@ -86,10 +86,10 @@ export default function HowItWorks() {
       </div>
 
       {/* the interactive contrast */}
-      <h2 className="mt-6 flex items-center gap-2 text-[15px] font-semibold text-bright">
+      <h2 className="mt-6 flex items-center gap-2 text-[17px] font-semibold text-bright">
         <UserCheck className="h-4 w-4 text-accent" /> The interactive flow (human in the loop)
       </h2>
-      <p className="mt-1.5 text-[13px] leading-relaxed text-body">
+      <p className="mt-1.5 text-[15px] leading-relaxed text-body">
         The mirror image: a person opens Claude Code through the Okta MCP Bridge, consents once, and the agent
         acts <span className="text-accent">on their behalf</span> via STS brokered consent — a short-lived token,
         no static credential. Same Okta, same audit; the difference is the root of authority: a{" "}
@@ -99,7 +99,7 @@ export default function HowItWorks() {
       </p>
 
       {/* okta value */}
-      <h2 className="mt-9 text-[15px] font-semibold text-bright">What Okta provides</h2>
+      <h2 className="mt-9 text-[17px] font-semibold text-bright">What Okta provides</h2>
       <div className="mt-3 overflow-hidden rounded-xl border border-line">
         {[
           { icon: UserCheck, layer: "Identity", v: "Each agent is a first-class workload identity (wlp…) in Universal Directory — its own credentials, owner, and lifecycle." },
@@ -110,14 +110,14 @@ export default function HowItWorks() {
           <div key={r.layer} className="flex items-start gap-3 border-b border-line px-4 py-3 last:border-0">
             <r.icon className="mt-0.5 h-4 w-4 shrink-0 text-accent" />
             <div>
-              <div className="text-[13px] font-semibold text-ink">{r.layer}</div>
-              <div className="text-[12.5px] leading-relaxed text-soft">{r.v}</div>
+              <div className="text-[15px] font-semibold text-ink">{r.layer}</div>
+              <div className="text-[14px] leading-relaxed text-soft">{r.v}</div>
             </div>
           </div>
         ))}
       </div>
 
-      <div className="mt-6 flex items-center gap-2 rounded-lg border border-line bg-panel px-4 py-3 text-[12px] text-soft">
+      <div className="mt-6 flex items-center gap-2 rounded-lg border border-line bg-panel px-4 py-3 text-[14px] text-soft">
         <FileCheck2 className="h-4 w-4 text-ok" />
         Once wired live, every receipt here links to the actual Okta System Log event and the real Jira issue.
       </div>

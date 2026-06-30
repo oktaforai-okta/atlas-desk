@@ -16,10 +16,10 @@ export default function Sidebar() {
     <aside className="flex w-56 shrink-0 flex-col border-r border-line bg-panel">
       <div className="flex items-center gap-2.5 px-4 py-4">
         <div className="flex h-7 w-7 items-center justify-center rounded-md bg-accent/15 ring-1 ring-accent/30">
-          <span className="font-mono text-[13px] font-bold text-accent">A</span>
+          <span className="font-mono text-[15px] font-bold text-accent">A</span>
         </div>
         <div className="leading-tight">
-          <div className="text-[13px] font-semibold text-bright">Atlas</div>
+          <div className="text-[15px] font-semibold text-bright">Atlas</div>
           <div className="text-2xs text-mute">Service Desk</div>
         </div>
       </div>
@@ -32,7 +32,7 @@ export default function Sidebar() {
             <Link
               key={n.href}
               href={n.href}
-              className={`mb-0.5 flex items-center gap-2.5 rounded-lg px-3 py-2 text-[13px] transition-colors ${
+              className={`mb-0.5 flex items-center gap-2.5 rounded-lg px-3 py-2 text-[15px] transition-colors ${
                 active ? "bg-raised text-bright" : "text-soft hover:bg-surface hover:text-ink"
               }`}
             >
