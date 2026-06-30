@@ -58,7 +58,11 @@ def build_comment_prompt(title: str, body: str, department: str) -> str:
 
 def _client():
     from anthropic import Anthropic
-    return Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+    # Pin to the real Anthropic API — ignore any ambient ANTHROPIC_BASE_URL (e.g. a proxy/gateway).
+    return Anthropic(
+        api_key=os.environ["ANTHROPIC_API_KEY"],
+        base_url=os.environ.get("ATLAS_ANTHROPIC_BASE_URL", "https://api.anthropic.com"),
+    )
 
 
 def classify(title: str, body: str) -> dict:
