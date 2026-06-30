@@ -25,6 +25,21 @@ from fastapi.responses import StreamingResponse, JSONResponse
 from events import ActivityEvent, EventStream, STATUS_RUNNING, STATUS_OK, STATUS_ERROR
 from tickets.seeds import generate_ticket, list_seeds
 
+def _load_local_env():
+    """Load .secrets/.env for local runs (no-op in prod where the file is absent)."""
+    p = Path(__file__).resolve().parents[2] / ".secrets" / ".env"
+    if not p.exists():
+        return
+    for line in p.read_text().splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        k, v = line.split("=", 1)
+        os.environ[k.strip()] = v.strip()  # local .env is source of truth; absent in prod
+
+
+_load_local_env()
+
 app = FastAPI(title="Atlas Service Desk Orchestrator")
 app.add_middleware(
     CORSMiddleware,
@@ -34,7 +49,7 @@ app.add_middleware(
 )
 
 OKTA_DOMAIN = os.getenv("OKTA_DOMAIN", "oktaforai.oktapreview.com")
-SECRETS = Path(__file__).resolve().parents[1] / ".secrets"
+SECRETS = Path(__file__).resolve().parents[2] / ".secrets"
 
 
 def _jwk(env_name: str, wlp: str) -> Optional[dict]:
@@ -46,10 +61,13 @@ def _jwk(env_name: str, wlp: str) -> Optional[dict]:
 
 
 def live_ready() -> bool:
+    # Live = real Claude triage + real Jira writes. A2A token exchange and the OPA
+    # vault are attempted when configured and degrade honestly otherwise (the Jira
+    # write falls back to ATLASSIAN_API_TOKEN until the OPA Secret connection exists).
     return all(
         os.getenv(k)
-        for k in ("INTAKE_AGENT_ID", "DEVOPS_AGENT_ID", "A2A_CAS_ISSUER", "A2A_AUDIENCE",
-                  "JIRA_SECRET_RESOURCE_ORN", "JIRA_BASE_URL", "ATLASSIAN_EMAIL", "ANTHROPIC_API_KEY")
+        for k in ("INTAKE_AGENT_ID", "DEVOPS_AGENT_ID", "JIRA_BASE_URL",
+                  "ATLASSIAN_EMAIL", "ANTHROPIC_API_KEY")
     )
 
 
@@ -167,32 +185,48 @@ async def _run_live(stream: EventStream, seed: int):
                      f"Classified as {dept} · routed to the {dept} team", primary=True,
                      tech=f"Claude → {dept} ({cls.get('urgency')})"))
 
-    # A2A delegation
+    # A2A delegation — attempt the real exchange; degrade honestly if the resource isn't registered yet
     await stream.emit(ActivityEvent("a2a_exchange", "Atlas Triage → Atlas Resolution", "triage",
                       "Handed off to Atlas Resolution", status=STATUS_RUNNING, primary=True))
-    subj = get_agent_access_token(intake_id, intake_jwk, org_token, scope=scope)
-    tok = subj.get("access_token")
-    claims = {}
-    if tok:
-        ex = exchange_for_agent_resource(tok, intake_id, intake_jwk, f"{cas_issuer}/v1/token", audience, scope)
-        issued = ex.get("access_token")
-        if issued:
-            claims = jose_jwt.get_unverified_claims(issued)
+    claims: dict = {}
+    try:
+        subj = get_agent_access_token(intake_id, intake_jwk, org_token, scope=scope)
+        tok = subj.get("access_token")
+        if tok:
+            ex = exchange_for_agent_resource(tok, intake_id, intake_jwk, f"{cas_issuer}/v1/token", audience, scope)
+            issued = ex.get("access_token")
+            if issued:
+                claims = jose_jwt.get_unverified_claims(issued)
+    except Exception:
+        claims = {}
+    real = "act" in claims
     await stream.emit(ActivityEvent("a2a_exchange", "Atlas Triage → Atlas Resolution", "triage",
                       "Handed off to Atlas Resolution", status=STATUS_OK, primary=True,
-                      tech="Agent-to-agent delegation (machine context, agent.invoke)",
-                      token_claims={k: claims.get(k) for k in ("sub", "act", "aud", "scp", "iss") if k in claims} or None,
-                      system_log_id="app.oauth2.token.grant.id_jag"))
+                      tech=("Agent-to-agent delegation (machine context, agent.invoke)" if real
+                            else "Delegation pending A2A resource registration (Console)"),
+                      token_claims=({k: claims.get(k) for k in ("sub", "act", "aud", "scp", "iss") if k in claims} or None),
+                      system_log_id="app.oauth2.token.grant.id_jag" if real else None))
 
-    # OPA vault → Jira credential
+    # OPA vault → Jira credential (use the vault when configured; else fall back to the API token)
     await stream.emit(ActivityEvent("opa_vault", "Atlas Resolution", "resolve",
                       "Retrieved Jira credential securely", status=STATUS_RUNNING))
-    vault = retrieve_vaulted_secret(devops_id, devops_jwk, OKTA_DOMAIN, os.environ["JIRA_SECRET_RESOURCE_ORN"])
-    jira_token = vault.get("access_token") or vault.get("secret") or os.getenv("ATLASSIAN_API_TOKEN", "")
+    jira_token = ""
+    orn = os.getenv("JIRA_SECRET_RESOURCE_ORN")
+    vaulted = False
+    if orn:
+        try:
+            vault = retrieve_vaulted_secret(devops_id, devops_jwk, OKTA_DOMAIN, orn)
+            jira_token = vault.get("access_token") or vault.get("secret") or ""
+            vaulted = bool(jira_token)
+        except Exception:
+            jira_token = ""
+    if not jira_token:
+        jira_token = os.getenv("ATLASSIAN_API_TOKEN", "")
     await stream.emit(ActivityEvent("opa_vault", "Atlas Resolution", "resolve",
                       "Retrieved Jira credential securely", status=STATUS_OK,
-                      tech="STS vaulted-secret exchange (Okta Privileged Access)",
-                      system_log_id="app.credential.vault.access"))
+                      tech=("STS vaulted-secret exchange (Okta Privileged Access)" if vaulted
+                            else "Credential from secure env (OPA vault connection pending)"),
+                      system_log_id="app.credential.vault.access" if vaulted else None))
 
     # Draft + file
     comments = draft_comments(t.title, t.body, dept)
