@@ -1,111 +1,117 @@
-// Chain-of-custody event contract (mirrors apps/orchestrator/events.py).
-// Provides a realistic MOCK stream so the UI is fully demoable before the
-// live backend is wired; switches to real SSE when NEXT_PUBLIC_ORCHESTRATOR_URL is set.
+// Activity model. The SAME events drive two surfaces:
+//  - Service Desk (main): product-friendly `plain` lines, the work as it happens.
+//  - How it works (deep dive): `tech` + decoded `token_claims` + System Log ids.
+// Mock stream makes it demoable; flips to live SSE when NEXT_PUBLIC_ORCHESTRATOR_URL is set.
 
-export type ChainStatus = "running" | "ok" | "error";
+export type Status = "running" | "ok" | "error";
+export type ActorKind = "intake" | "triage" | "resolve" | "okta";
 
-export interface ChainEvent {
+export interface ActivityEvent {
   step: string;
-  label: string;
-  status: ChainStatus;
-  identity?: string | null;
-  detail?: string | null;
+  actor: string;
+  actorKind: ActorKind;
+  plain: string;          // main feed line
+  tech?: string;          // deep-dive detail
+  primary?: boolean;      // surfaced on the main feed
   token_claims?: Record<string, unknown> | null;
   system_log_id?: string | null;
   data?: Record<string, unknown>;
+  status?: Status;
   ts?: number;
 }
 
 export interface Ticket {
   id: string;
-  title: string;
+  subject: string;
   body: string;
-  reporter: string;
+  requester: string;
+  team?: string;
+  status: "new" | "working" | "resolved";
+  issueKey?: string;
+  createdAgo: string;
 }
 
 export const ORCH = process.env.NEXT_PUBLIC_ORCHESTRATOR_URL || "";
 
-// ---- mock ticket pool (matches the backend seeds in spirit) ----
-const MOCK_TICKETS: Array<Ticket & { department: string }> = [
-  { id: "INC-4471", title: "Can't connect to VPN from home",
+const POOL: Array<{ id: string; subject: string; body: string; requester: string; team: string }> = [
+  { id: "INC-4471", subject: "Can't connect to VPN from home", team: "Networking",
     body: "Corporate VPN client fails with 'authentication timeout' right after I approve the push. Worked yesterday. Fully remote today.",
-    reporter: "dana.reed@acme.example", department: "Networking" },
-  { id: "INC-4473", title: "Need access to the Salesforce Revenue dashboard",
+    requester: "dana.reed@acme.com" },
+  { id: "INC-4473", subject: "Need access to the Salesforce Revenue dashboard", team: "Access Management",
     body: "Moved to RevOps and can't see the Revenue dashboard in Salesforce. Manager said to request access through IT.",
-    reporter: "priya.nair@acme.example", department: "Access Management" },
-  { id: "INC-4472", title: "Laptop won't power on after update",
+    requester: "priya.nair@acme.com" },
+  { id: "INC-4472", subject: "Laptop won't power on after update", team: "Hardware",
     body: "ThinkPad shut down during a Windows update and now the power light blinks three times. Customer demo at 2pm.",
-    reporter: "marco.silva@acme.example", department: "Hardware" },
-  { id: "INC-4478", title: "Slack huddle audio not working on desktop app",
+    requester: "marco.silva@acme.com" },
+  { id: "INC-4478", subject: "Slack huddle audio not working on desktop app", team: "Software",
     body: "Mic and audio fail only in the Slack desktop app; browser works. Reinstalled, no change. Blocks standup.",
-    reporter: "noah.berg@acme.example", department: "Software" },
+    requester: "noah.berg@acme.com" },
 ];
 
-let mockIdx = 0;
-export function nextMockTicket(): Ticket {
-  const t = MOCK_TICKETS[mockIdx % MOCK_TICKETS.length];
-  mockIdx += 1;
-  return { id: t.id, title: t.title, body: t.body, reporter: t.reporter };
+// A few resolved tickets so the queue looks like a real, lived-in desk.
+export const SEED_QUEUE: Ticket[] = [
+  { id: "INC-4469", subject: "MFA prompt loop on new phone", body: "", requester: "owen.diaz@acme.com",
+    team: "Access Management", status: "resolved", issueKey: "ITSD-118", createdAgo: "2h ago" },
+  { id: "INC-4470", subject: "Monitor not detected via dock", body: "", requester: "amy.chen@acme.com",
+    team: "Hardware", status: "resolved", issueKey: "ITSD-119", createdAgo: "1h ago" },
+];
+
+let idx = 0;
+export function nextTicket(): Ticket {
+  const t = POOL[idx % POOL.length];
+  idx += 1;
+  return { id: t.id, subject: t.subject, body: t.body, requester: t.requester,
+           status: "new", createdAgo: "just now" };
 }
 
-const ORG = "00ounfmlb8nQg2PUH1d7";
+const ISS = "https://oktaforai.oktapreview.com/oauth2/aus10rq0j6dqzBIY51d8";
 
-// Build the realistic mock event sequence for a ticket.
-function mockSequence(t: Ticket): ChainEvent[] {
-  const dept = (MOCK_TICKETS.find((m) => m.id === t.id)?.department) || "Networking";
-  const triage = "Atlas Triage Agent · wlp10qjmsgdQROgxE1d8";
-  const resolution = "Atlas Resolution Agent · wlp10qjml8mNlyBVK1d8";
-  const issueKey = `ITSD-${100 + (mockIdx % 80)}`;
+function sequence(t: Ticket): ActivityEvent[] {
+  const team = POOL.find((p) => p.id === t.id)?.team || "Networking";
+  const issueKey = `ITSD-${120 + (idx % 60)}`;
+  const triage = "Atlas Triage";
+  const resolve = "Atlas Resolution";
   return [
-    { step: "inbound", label: "Ticket received", status: "ok",
-      identity: "External ticketing system", detail: `${t.id} ingested via inbound API` },
-    { step: "intake_auth", label: "Triage agent authenticated", status: "ok",
-      identity: triage, detail: "private_key_jwt → Okta (no human in the loop)",
-      system_log_id: "wpo_" + rand() },
-    { step: "intake_classify", label: "LLM triage", status: "ok",
-      identity: triage, detail: `Claude classified → ${dept} · routed for filing` },
-    { step: "a2a_exchange", label: "A2A token exchange", status: "ok",
-      identity: `${triage}  ⟶  ${resolution}`,
-      detail: "machine-context delegation · agent.invoke",
-      token_claims: {
-        sub: "wlp10qjmsgdQROgxE1d8",
-        act: { sub: "wlp10qjmsgdQROgxE1d8", purpose: "agent.invoke" },
-        aud: "https://atlas.acme.example/resolution",
-        scp: ["agent.invoke"],
-        iss: "https://oktaforai.oktapreview.com/oauth2/aus10rq0j6dqzBIY51d8",
-      },
-      system_log_id: "app.oauth2.token.grant." + rand() },
-    { step: "devops_receive", label: "Resolution agent invoked", status: "ok",
-      identity: resolution, detail: "validated act-claim chain of custody" },
-    { step: "opa_vault", label: "Jira credential released from OPA vault", status: "ok",
-      identity: resolution,
-      detail: "STS vaulted-secret exchange · credential never in agent code",
-      token_claims: { resource: `orn:okta:opa:${ORG}:secrets:jira-atlas`, requested_token_type: "vaulted-secret" },
-      system_log_id: "app.credential.vault.access." + rand() },
-    { step: "devops_draft", label: "LLM drafted resolution notes", status: "ok",
-      identity: resolution, detail: "Claude drafted acknowledgement + first next step" },
-    { step: "jira_write", label: "Filed to Jira as machine identity", status: "ok",
-      identity: resolution,
-      detail: `Created ${issueKey} · component ${dept} · labeled · 2 comments`,
-      data: { issue_key: issueKey, component: dept },
-      system_log_id: "jira.issue.created" },
-    { step: "done", label: "Chain of custody complete", status: "ok",
-      identity: "Atlas IOC", detail: "Every hop attributed · fully revocable" },
+    { step: "inbound", actor: "Intake", actorKind: "intake", primary: true,
+      plain: "Received via intake API", tech: `${t.id} ingested from the external ticketing system` },
+    { step: "intake_auth", actor: triage, actorKind: "triage",
+      plain: "Atlas Triage picked up the ticket",
+      tech: "Authenticated to Okta with its workload identity (private_key_jwt) — no human in the loop",
+      system_log_id: "app.oauth2.token.grant" },
+    { step: "intake_classify", actor: triage, actorKind: "triage", primary: true,
+      plain: `Classified as ${team} · routed to the ${team} team`,
+      tech: "Claude classified the ticket and selected the destination team" },
+    { step: "a2a_exchange", actor: `${triage} → ${resolve}`, actorKind: "triage", primary: true,
+      plain: `Handed off to ${resolve}`,
+      tech: "Agent-to-agent delegation over Okta (machine context, scope agent.invoke). The issued token carries an act claim — the verifiable chain of custody.",
+      token_claims: { sub: "wlp · Atlas Triage", act: { sub: "wlp · Atlas Triage", scope: "agent.invoke" },
+        aud: "https://atlas.acme.example/resolution", scp: ["agent.invoke"], iss: ISS },
+      system_log_id: "app.oauth2.token.grant.id_jag" },
+    { step: "opa_vault", actor: resolve, actorKind: "resolve",
+      plain: "Retrieved Jira credential securely",
+      tech: "Jira credential released from the Okta OPA vault at runtime (STS vaulted-secret) — never stored in agent code",
+      token_claims: { resource: "orn:okta:opa:…:secrets:jira-atlas", requested_token_type: "vaulted-secret" },
+      system_log_id: "app.credential.vault.access" },
+    { step: "devops_draft", actor: resolve, actorKind: "resolve", primary: true,
+      plain: "Drafted an acknowledgement and a first next step",
+      tech: "Claude drafted two work-note comments for the ticket" },
+    { step: "jira_write", actor: resolve, actorKind: "resolve", primary: true,
+      plain: `Filed ${issueKey} in Jira · ${team} · labeled · 2 comments`,
+      tech: "POST /rest/api/3/issue — created, componented, labeled, commented",
+      data: { issue_key: issueKey, team }, system_log_id: "jira.issue.created" },
+    { step: "done", actor: "Atlas", actorKind: "okta", primary: true,
+      plain: "Resolved and tracked in Jira",
+      tech: "Every hop attributed to a governed identity · fully revocable" },
   ];
-}
-
-function rand() {
-  // deterministic-ish id for display (no Math.random reliance on first paint)
-  return Math.abs(Date.now() % 1_000_000).toString(36);
 }
 
 export async function runPipeline(
   ticket: Ticket,
-  onEvent: (e: ChainEvent) => void,
+  onEvent: (e: ActivityEvent) => void,
   signal?: AbortSignal,
-): Promise<void> {
+): Promise<{ issueKey?: string; team?: string }> {
+  let result: { issueKey?: string; team?: string } = {};
   if (ORCH) {
-    // Real backend SSE
     const res = await fetch(`${ORCH}/api/run?ticket_id=${encodeURIComponent(ticket.id)}`, { signal });
     const reader = res.body!.getReader();
     const dec = new TextDecoder();
@@ -118,21 +124,24 @@ export async function runPipeline(
       buf = parts.pop() || "";
       for (const p of parts) {
         const line = p.split("\n").find((l) => l.startsWith("data: "));
-        if (line) onEvent(JSON.parse(line.slice(6)));
+        if (!line) continue;
+        const e: ActivityEvent = JSON.parse(line.slice(6));
+        if (e.data?.issue_key) result = { issueKey: String(e.data.issue_key), team: String(e.data.team || "") };
+        onEvent(e);
       }
     }
-    return;
+    return result;
   }
-  // Mock stream with cinematic pacing
-  const seq = mockSequence(ticket);
-  for (const e of seq) {
-    if (signal?.aborted) return;
+  for (const e of sequence(ticket)) {
+    if (signal?.aborted) return result;
     onEvent({ ...e, status: "running", ts: Date.now() });
-    await delay(420);
-    if (signal?.aborted) return;
+    await delay(360);
+    if (signal?.aborted) return result;
     onEvent({ ...e, status: "ok", ts: Date.now() });
-    await delay(520);
+    if (e.data?.issue_key) result = { issueKey: String(e.data.issue_key), team: String(e.data.team || "") };
+    await delay(440);
   }
+  return result;
 }
 
 const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
