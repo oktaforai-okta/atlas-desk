@@ -20,7 +20,7 @@ export default function TicketActivity({ events }: { events: ActivityEvent[] }) 
 
   if (rows.length === 0) {
     return (
-      <div className="py-8 text-center text-[13px] text-mute">
+      <div className="py-8 text-center text-[15px] text-mute">
         No activity yet.
       </div>
     );
@@ -53,7 +53,7 @@ export default function TicketActivity({ events }: { events: ActivityEvent[] }) 
                 <div className="-mt-0.5 flex-1">
                   <div className="flex items-center gap-2">
                     <span
-                      className={`font-mono text-[11px] ${
+                      className={`font-mono text-[13px] ${
                         e.actorKind === "triage" ? "text-triage"
                           : e.actorKind === "resolve" ? "text-resolve"
                           : e.actorKind === "okta" ? "text-accent" : "text-soft"
@@ -67,14 +67,14 @@ export default function TicketActivity({ events }: { events: ActivityEvent[] }) 
                       </span>
                     )}
                   </div>
-                  <div className={`mt-0.5 text-[13px] ${running ? "text-soft" : "text-ink"}`}>
+                  <div className={`mt-0.5 text-[15px] ${running ? "text-soft" : "text-ink"}`}>
                     {e.plain}
                     {running && <span className="ml-1 text-mute">…</span>}
                   </div>
                   {e.data?.issue_key ? (
                     <a
                       href="#"
-                      className="mt-1.5 inline-flex items-center gap-1 rounded-md border border-resolve/40 bg-resolve/10 px-2 py-1 font-mono text-[11px] text-resolve hover:bg-resolve/15"
+                      className="mt-1.5 inline-flex items-center gap-1 rounded-md border border-resolve/40 bg-resolve/10 px-2 py-1 font-mono text-[13px] text-resolve hover:bg-resolve/15"
                     >
                       {String(e.data.issue_key)} · open in Jira ↗
                     </a>
@@ -89,7 +89,7 @@ export default function TicketActivity({ events }: { events: ActivityEvent[] }) 
       {rows.some((e) => e.step === "done") && (
         <Link
           href="/how-it-works"
-          className="mt-1 inline-flex items-center gap-1.5 text-[12px] text-mute hover:text-accent"
+          className="mt-1 inline-flex items-center gap-1.5 text-[14px] text-mute hover:text-accent"
         >
           <BookOpen className="h-3.5 w-3.5" />
           See how Okta secured every hop of this →

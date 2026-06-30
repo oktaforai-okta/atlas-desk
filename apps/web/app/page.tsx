@@ -48,7 +48,7 @@ export default function ServiceDesk() {
       {/* header */}
       <header className="flex items-center justify-between border-b border-line px-6 py-3.5">
         <div>
-          <h1 className="text-[15px] font-semibold text-bright">Service Desk</h1>
+          <h1 className="text-[17px] font-semibold text-bright">Service Desk</h1>
           <p className="text-2xs text-mute">
             Autonomous triage &amp; resolution · {ORCH ? "live" : "demo data"}
           </p>
@@ -56,7 +56,7 @@ export default function ServiceDesk() {
         <button
           onClick={simulateInbound}
           disabled={running}
-          className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-3 py-2 text-[13px] font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+          className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-3 py-2 text-[15px] font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
         >
           <Plus className="h-4 w-4" />
           {running ? "Processing…" : "Simulate inbound ticket"}
@@ -81,12 +81,12 @@ export default function ServiceDesk() {
                 }`}
               >
                 <div className="flex items-center justify-between">
-                  <span className="font-mono text-[11px] text-mute">{t.id}</span>
+                  <span className="font-mono text-[13px] text-mute">{t.id}</span>
                   <span className={`flex items-center gap-1.5 text-2xs ${m.text}`}>
                     <span className={`dot ${m.dot}`} /> {m.label}
                   </span>
                 </div>
-                <div className="mt-1 text-[13px] leading-snug text-ink">{t.subject}</div>
+                <div className="mt-1 text-[15px] leading-snug text-ink">{t.subject}</div>
                 <div className="mt-1 flex items-center gap-2 text-2xs text-mute">
                   {t.team && <span className="rounded bg-raised px-1.5 py-0.5">{t.team}</span>}
                   <span>{t.createdAgo}</span>
@@ -101,22 +101,22 @@ export default function ServiceDesk() {
           {!selected ? (
             <div className="flex h-full flex-col items-center justify-center text-center">
               <CircleDot className="h-7 w-7 text-line2" />
-              <p className="mt-3 text-[13px] text-mute">
+              <p className="mt-3 text-[15px] text-mute">
                 Select a ticket, or simulate an inbound one
                 <br />to watch the agents work it.
               </p>
             </div>
           ) : (
             <div className="mx-auto max-w-2xl px-8 py-6">
-              <div className="flex items-center gap-2 font-mono text-[11px] text-mute">
+              <div className="flex items-center gap-2 font-mono text-[13px] text-mute">
                 {selected.id}
                 <span className={`flex items-center gap-1.5 ${STATUS_META[selected.status].text}`}>
                   · <span className={`dot ${STATUS_META[selected.status].dot}`} />
                   {STATUS_META[selected.status].label}
                 </span>
               </div>
-              <h2 className="mt-1.5 text-[19px] font-semibold leading-snug text-bright">{selected.subject}</h2>
-              <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-soft">
+              <h2 className="mt-1.5 text-[23px] font-semibold leading-snug text-bright">{selected.subject}</h2>
+              <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[14px] text-soft">
                 <span className="inline-flex items-center gap-1.5">
                   <User className="h-3.5 w-3.5 text-mute" /> {selected.requester}
                 </span>
@@ -134,7 +134,7 @@ export default function ServiceDesk() {
               </div>
 
               {selected.body && (
-                <p className="mt-4 rounded-lg border border-line bg-panel px-4 py-3 text-[13px] leading-relaxed text-body">
+                <p className="mt-4 rounded-lg border border-line bg-panel px-4 py-3 text-[15px] leading-relaxed text-body">
                   {selected.body}
                 </p>
               )}

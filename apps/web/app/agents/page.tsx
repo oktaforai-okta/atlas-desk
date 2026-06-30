@@ -33,8 +33,8 @@ export default function AgentsPage() {
   return (
     <div className="mx-auto max-w-3xl px-8 py-8">
       <div className="text-2xs uppercase tracking-wider text-accent">Universal Directory</div>
-      <h1 className="mt-1 text-[22px] font-bold text-bright">Agents</h1>
-      <p className="mt-2 text-[14px] leading-relaxed text-body">
+      <h1 className="mt-1 text-[26px] font-bold text-bright">Agents</h1>
+      <p className="mt-2 text-[16px] leading-relaxed text-body">
         The agents that run the Service Desk are first-class identities in Okta, each with its own
         credentials, owner, and lifecycle. Not shared service accounts — governed, auditable, revocable.
       </p>
@@ -48,7 +48,7 @@ export default function AgentsPage() {
                   <Bot className={`h-5 w-5 ${a.color}`} />
                 </div>
                 <div>
-                  <div className="text-[15px] font-semibold text-bright">{a.name}</div>
+                  <div className="text-[17px] font-semibold text-bright">{a.name}</div>
                   <div className="text-2xs text-mute">{a.kind}</div>
                 </div>
               </div>
@@ -57,9 +57,9 @@ export default function AgentsPage() {
               </span>
             </div>
 
-            <p className="mt-3 text-[13px] leading-relaxed text-body">{a.purpose}</p>
+            <p className="mt-3 text-[15px] leading-relaxed text-body">{a.purpose}</p>
 
-            <div className="mt-4 grid grid-cols-2 gap-x-6 gap-y-2 border-t border-line pt-3 text-[12px]">
+            <div className="mt-4 grid grid-cols-2 gap-x-6 gap-y-2 border-t border-line pt-3 text-[14px]">
               <Meta label="Identity (wlp)" value={a.wlp} mono />
               <Meta label="Owner" value="johnathan.campos@okta.com" icon />
               <Meta label="Credential" value="RSA JWK · active" mono />
@@ -73,7 +73,7 @@ export default function AgentsPage() {
                   <div key={i} className="flex items-center gap-2.5 rounded-lg border border-line bg-panel px-3 py-2">
                     <x.icon className="h-4 w-4 shrink-0 text-accent" />
                     <div>
-                      <div className="text-[12.5px] text-ink">{x.t}</div>
+                      <div className="text-[14px] text-ink">{x.t}</div>
                       <div className="font-mono text-2xs text-mute">{x.d}</div>
                     </div>
                   </div>
@@ -91,7 +91,7 @@ function Meta({ label, value, mono, icon }: { label: string; value: string; mono
   return (
     <div className="flex items-center justify-between gap-2">
       <span className="text-mute">{label}</span>
-      <span className={`flex items-center gap-1 text-ink ${mono ? "font-mono text-[11px]" : ""}`}>
+      <span className={`flex items-center gap-1 text-ink ${mono ? "font-mono text-[13px]" : ""}`}>
         {icon && <User className="h-3 w-3 text-mute" />}
         {value}
       </span>

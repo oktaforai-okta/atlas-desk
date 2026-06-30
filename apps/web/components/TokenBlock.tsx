@@ -34,7 +34,7 @@ export default function TokenBlock({ claims, caption }: { claims: Record<string,
       {caption && (
         <div className="border-b border-line px-3 py-1.5 font-mono text-2xs text-mute">{caption}</div>
       )}
-      <pre className="overflow-x-auto p-3 font-mono text-[11.5px] leading-relaxed">
+      <pre className="overflow-x-auto p-3 font-mono text-[13px] leading-relaxed">
         <span className="tok-punc">{"{"}</span>
         <div className="pl-1">{render(claims, 1)}</div>
         <span className="tok-punc">{"}"}</span>
