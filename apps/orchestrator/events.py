@@ -1,27 +1,14 @@
-"""Chain-of-custody event model + async emitter.
+"""Activity event model + SSE emitter (matches the frontend ActivityEvent contract).
 
-Each hop of the autonomous pipeline emits a ChainEvent. The orchestrator streams
-these to the frontend over SSE so the Chain-of-Custody panel can render the
-identity + token claims + audit receipt at every step.
+JSON keys must match apps/web/lib/events.ts: step, actor, actorKind, plain, tech,
+primary, token_claims, system_log_id, data, status, ts.
 """
 from __future__ import annotations
 
 import asyncio
 import json
-from dataclasses import dataclass, field, asdict
-from typing import Any, Optional
-
-
-# Ordered pipeline steps the UI knows how to render.
-STEP_INBOUND = "inbound"
-STEP_INTAKE_AUTH = "intake_auth"
-STEP_INTAKE_CLASSIFY = "intake_classify"
-STEP_A2A_EXCHANGE = "a2a_exchange"
-STEP_DEVOPS_RECEIVE = "devops_receive"
-STEP_OPA_VAULT = "opa_vault"
-STEP_DEVOPS_DRAFT = "devops_draft"
-STEP_JIRA_WRITE = "jira_write"
-STEP_DONE = "done"
+from dataclasses import dataclass, field
+from typing import Optional
 
 STATUS_RUNNING = "running"
 STATUS_OK = "ok"
@@ -29,39 +16,53 @@ STATUS_ERROR = "error"
 
 
 @dataclass
-class ChainEvent:
+class ActivityEvent:
     step: str
-    label: str
+    actor: str
+    actor_kind: str  # "intake" | "triage" | "resolve" | "okta"
+    plain: str
+    tech: Optional[str] = None
+    primary: bool = False
+    token_claims: Optional[dict] = None
+    system_log_id: Optional[str] = None
+    data: dict = field(default_factory=dict)
     status: str = STATUS_OK
-    identity: Optional[str] = None          # e.g. "Atlas Triage Agent (wlp...)"
-    detail: Optional[str] = None            # human-readable line for the receipt
-    token_claims: Optional[dict] = None     # decoded JWT claims (sub, act, aud, scp...)
-    system_log_id: Optional[str] = None     # Okta System Log eventId / operation id
-    data: dict = field(default_factory=dict)  # step-specific extras (e.g. jira issue key)
     ts: Optional[float] = None
 
+    def to_dict(self) -> dict:
+        return {
+            "step": self.step,
+            "actor": self.actor,
+            "actorKind": self.actor_kind,
+            "plain": self.plain,
+            "tech": self.tech,
+            "primary": self.primary,
+            "token_claims": self.token_claims,
+            "system_log_id": self.system_log_id,
+            "data": self.data,
+            "status": self.status,
+            "ts": self.ts,
+        }
+
     def sse(self) -> str:
-        payload = asdict(self)
-        return f"event: chain\ndata: {json.dumps(payload)}\n\n"
+        return f"event: chain\ndata: {json.dumps(self.to_dict())}\n\n"
 
 
 class EventStream:
-    """Single-run async queue the SSE endpoint drains."""
+    """Per-run async queue drained by the SSE endpoint."""
 
     def __init__(self) -> None:
         self._q: asyncio.Queue = asyncio.Queue()
-        self._closed = False
 
-    async def emit(self, event: ChainEvent) -> None:
-        await self._q.put(event)
+    async def emit(self, e: ActivityEvent) -> None:
+        await self._q.put(e)
 
     async def close(self) -> None:
-        self._closed = True
-        await self._q.put(None)  # sentinel
+        await self._q.put(None)
 
-    async def __aiter__(self):
+    async def stream(self):
         while True:
             item = await self._q.get()
             if item is None:
                 return
-            yield item
+            yield item.sse()
