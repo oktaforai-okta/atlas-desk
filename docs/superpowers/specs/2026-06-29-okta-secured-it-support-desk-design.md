@@ -171,7 +171,7 @@ A2A is confirmed live in the tenant (multiple a2a-server resources + delegation-
 
 ## 10. Open assumptions
 
-- Project name / repo: `jc-devops-desk` (adjustable).
+- Project name / repo: `atlas-desk` (adjustable).
 - App display name: "Okta-Secured IT Support Desk" (adjustable).
 - Claude-side agent: new registration or reuse existing `Claude Code Agent`; decided at Phase 4.
 - Jira "department" modeled as a **component**; tags as **labels**.

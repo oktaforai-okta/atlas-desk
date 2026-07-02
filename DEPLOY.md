@@ -9,13 +9,13 @@ Two managed services, both on the shared **oktaforai** accounts:
 
 The frontend calls the orchestrator over SSE. Wire them by setting the Render URL as the frontend's `NEXT_PUBLIC_ORCHESTRATOR_URL`.
 
-> Prereq: both accounts' GitHub connections must have access to `astro7982/jc-devops-desk` and this deploy branch. Grant the oktaforai Vercel + Render GitHub apps access to the repo if prompted.
+> Prereq: both accounts' GitHub connections must have access to `oktaforai-okta/atlas-desk` and this deploy branch. Grant the oktaforai Vercel + Render GitHub apps access to the repo if prompted.
 
 ---
 
 ## 1. Backend — Render (do this first; the frontend needs its URL)
 
-1. In the shared Render project **prj-d7gh20a8qa3s73f6lheg** → **New → Blueprint** (or Web Service), connect `astro7982/jc-devops-desk`, pick this deploy branch. Render reads `render.yaml` and proposes **atlas-orchestrator** (Starter, rootDir `apps/orchestrator`).
+1. In the shared Render project **prj-d7gh20a8qa3s73f6lheg** → **New → Blueprint** (or Web Service), connect `oktaforai-okta/atlas-desk`, pick this deploy branch. Render reads `render.yaml` and proposes **atlas-orchestrator** (Starter, rootDir `apps/orchestrator`).
 2. Set the secret env vars (marked `sync:false` in `render.yaml`, so Render prompts for them). Values live in the local `.secrets/` on the demo machine:
 
    | Env var | Where to get the value |
@@ -36,7 +36,7 @@ The frontend calls the orchestrator over SSE. Wire them by setting the Render UR
 
 ## 2. Frontend — Vercel (oktaforai account)
 
-1. **Add New → Project**, import `astro7982/jc-devops-desk`, same branch.
+1. **Add New → Project**, import `oktaforai-okta/atlas-desk`, same branch.
 2. **Root Directory → `apps/web`** (Framework auto-detects as Next.js; build `next build`).
 3. Add an Environment Variable (Production + Preview):
    - `NEXT_PUBLIC_ORCHESTRATOR_URL` = the Render URL from step 1.4
