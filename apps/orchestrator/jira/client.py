@@ -53,7 +53,7 @@ class JiraClient:
     # --- issue ops (the Resolution Agent's writes) ---
     def create_issue(self, project_key: str, summary: str, description: str,
                      component: Optional[str] = None, labels: Optional[List[str]] = None,
-                     issue_type: str = "Task") -> dict:
+                     priority: Optional[str] = None, issue_type: str = "Task") -> dict:
         fields = {
             "project": {"key": project_key},
             "summary": summary,
@@ -64,6 +64,8 @@ class JiraClient:
             fields["components"] = [{"name": component}]
         if labels:
             fields["labels"] = labels
+        if priority:
+            fields["priority"] = {"name": priority}
         return self._c.post(f"{self.base}/rest/api/3/issue", json={"fields": fields}).json()
 
     def add_labels(self, issue_key: str, labels: List[str]) -> int:
@@ -73,6 +75,58 @@ class JiraClient:
     def add_comment(self, issue_key: str, text: str) -> dict:
         return self._c.post(f"{self.base}/rest/api/3/issue/{issue_key}/comment",
                             json={"body": _adf(text)}).json()
+
+    def transitions(self, issue_key: str) -> List[dict]:
+        r = self._c.get(f"{self.base}/rest/api/3/issue/{issue_key}/transitions")
+        return r.json().get("transitions", []) if r.status_code == 200 else []
+
+    def resolve_issue(self, issue_key: str) -> Optional[str]:
+        """Really transition the issue to a done/resolved state (auto-resolve path).
+
+        Jira workflows vary, so we match a transition by common name, else fall back
+        to any transition whose TARGET status is in the 'done' category. Returns the
+        resulting status name, or None if no suitable transition exists.
+        """
+        prefer = ["Done", "Resolve", "Resolved", "Resolve this issue", "Complete", "Close", "Closed"]
+        trs = self.transitions(issue_key)
+        chosen = None
+        for want in prefer:
+            chosen = next((t for t in trs if t.get("name", "").lower() == want.lower()), None) \
+                or next((t for t in trs if t.get("to", {}).get("name", "").lower() == want.lower()), None)
+            if chosen:
+                break
+        if not chosen:
+            chosen = next((t for t in trs if t.get("to", {}).get("statusCategory", {}).get("key") == "done"), None)
+        if not chosen:
+            return None
+        r = self._c.post(f"{self.base}/rest/api/3/issue/{issue_key}/transitions",
+                         json={"transition": {"id": chosen["id"]}})
+        return (chosen.get("to", {}).get("name") or chosen.get("name")) if r.status_code in (200, 204) else None
+
+    def find_account_id(self, email: str, project_key: Optional[str] = None) -> Optional[str]:
+        """Resolve a user's Jira accountId by email (Cloud assigns by accountId, not email).
+
+        Prefers project-scoped assignable search (ensures the user can actually be
+        assigned), falling back to the global user search.
+        """
+        def _match(users: list) -> Optional[str]:
+            for u in users:
+                if (u.get("emailAddress") or "").lower() == email.lower():
+                    return u.get("accountId")
+            return users[0].get("accountId") if users else None
+        if project_key:
+            r = self._c.get(f"{self.base}/rest/api/3/user/assignable/search",
+                            params={"project": project_key, "query": email})
+            if r.status_code == 200 and isinstance(r.json(), list) and r.json():
+                aid = _match(r.json())
+                if aid:
+                    return aid
+        r = self._c.get(f"{self.base}/rest/api/3/user/search", params={"query": email})
+        return _match(r.json()) if r.status_code == 200 and isinstance(r.json(), list) else None
+
+    def assign_issue(self, issue_key: str, account_id: str) -> int:
+        return self._c.put(f"{self.base}/rest/api/3/issue/{issue_key}/assignee",
+                           json={"accountId": account_id}).status_code
 
 
 def _adf(text: str) -> dict:
