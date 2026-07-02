@@ -5,14 +5,14 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        // Atlas Service Desk — refined dark, tuned for projector legibility (brighter text, borders, accents)
+        // Atlas Service Desk, refined dark, tuned for projector legibility (brighter text, borders, accents)
         bg: "#0B0E13",
         panel: "#10141C",
         surface: "#141A23",
         raised: "#1A212C",
         line: "#2A323F",     // visible separators when projected
         line2: "#3A4456",
-        mute: "#8B96A8",     // secondary text — readable on a projector
+        mute: "#8B96A8",     // secondary text, readable on a projector
         soft: "#AAB4C3",
         body: "#C7D0DD",     // primary reading text
         ink: "#E4E9F1",
@@ -23,6 +23,7 @@ const config: Config = {
         bad: "#FF6168",      // failed / denied
         triage: "#7AA2FF",   // Atlas Triage identity
         resolve: "#4ED492",  // Atlas Resolution identity
+        fulfill: "#E0A34E",  // Atlas Fulfillment identity
       },
       fontFamily: {
         sans: ["var(--font-sans)", "system-ui", "sans-serif"],

@@ -4,7 +4,7 @@
 // Mock stream makes it demoable; flips to live SSE when NEXT_PUBLIC_ORCHESTRATOR_URL is set.
 
 export type Status = "running" | "ok" | "error";
-export type ActorKind = "intake" | "triage" | "resolve" | "okta";
+export type ActorKind = "intake" | "triage" | "resolve" | "fulfill" | "okta";
 
 export interface ActivityEvent {
   step: string;
@@ -20,6 +20,14 @@ export interface ActivityEvent {
   ts?: number;
 }
 
+// "Last event per step wins", the same pattern TicketActivity built inline;
+// shared here since AgentFlowGraph and the Jira-link lookup need it too.
+export function latestByStep(events: ActivityEvent[]): Map<string, ActivityEvent> {
+  const latest = new Map<string, ActivityEvent>();
+  for (const e of events) latest.set(e.step, e);
+  return latest;
+}
+
 export interface Ticket {
   id: string;
   subject: string;
@@ -28,91 +36,206 @@ export interface Ticket {
   team?: string;
   status: "new" | "working" | "resolved";
   issueKey?: string;
+  issueUrl?: string;
+  outcome?: "auto_resolved" | "routed"; // set once the run finishes
+  resolution?: string;                   // customer reply the agent sent (auto-resolve only)
   createdAgo: string;
 }
 
 export const ORCH = process.env.NEXT_PUBLIC_ORCHESTRATOR_URL || "";
 
-const POOL: Array<{ id: string; subject: string; body: string; requester: string; team: string }> = [
-  { id: "INC-4471", subject: "Can't connect to VPN from home", team: "Networking",
+// Bridges the real per-step token_claims from a live run over to /how-it-works,
+// which is a separate page (and loses component state on navigation).
+export const TOKEN_CLAIMS_KEY = "atlas:tokenClaims";
+
+export function captureTokenClaims(e: ActivityEvent) {
+  if (typeof window === "undefined" || !e.token_claims) return;
+  try {
+    const raw = window.sessionStorage.getItem(TOKEN_CLAIMS_KEY);
+    const store = raw ? JSON.parse(raw) : {};
+    store[e.step] = { token_claims: e.token_claims, system_log_id: e.system_log_id ?? null, captured_at: Date.now() };
+    window.sessionStorage.setItem(TOKEN_CLAIMS_KEY, JSON.stringify(store));
+  } catch {
+    // sessionStorage unavailable (private mode, etc.), the static example still renders
+  }
+}
+
+const POOL: Array<{ subject: string; body: string; requester: string; team: string }> = [
+  { subject: "Can't connect to VPN from home", team: "Networking",
     body: "Corporate VPN client fails with 'authentication timeout' right after I approve the push. Worked yesterday. Fully remote today.",
-    requester: "dana.reed@acme.com" },
-  { id: "INC-4473", subject: "Need access to the Salesforce Revenue dashboard", team: "Access Management",
+    requester: "dana.reed@atko.email" },
+  { subject: "Need access to the Salesforce Revenue dashboard", team: "Access Management",
     body: "Moved to RevOps and can't see the Revenue dashboard in Salesforce. Manager said to request access through IT.",
-    requester: "priya.nair@acme.com" },
-  { id: "INC-4472", subject: "Laptop won't power on after update", team: "Hardware",
+    requester: "priya.nair@atko.email" },
+  { subject: "Laptop won't power on after update", team: "Hardware",
     body: "ThinkPad shut down during a Windows update and now the power light blinks three times. Customer demo at 2pm.",
-    requester: "marco.silva@acme.com" },
-  { id: "INC-4478", subject: "Slack huddle audio not working on desktop app", team: "Software",
+    requester: "marco.silva@atko.email" },
+  { subject: "Slack huddle audio not working on desktop app", team: "Software",
     body: "Mic and audio fail only in the Slack desktop app; browser works. Reinstalled, no change. Blocks standup.",
-    requester: "noah.berg@acme.com" },
+    requester: "noah.berg@atko.email" },
+  { subject: "Locked out of GitHub org after SSO change", team: "Access Management",
+    body: "After the SSO migration I can't access the engineering GitHub org. Getting 'you are not a member' even though I was yesterday.",
+    requester: "tara.lin@atko.email" },
+  { subject: "Office Wi-Fi dropping every few minutes", team: "Networking",
+    body: "The 4th-floor conference room Wi-Fi disconnects every 5-10 minutes during calls. Multiple people on the floor see the same thing.",
+    requester: "lena.fischer@atko.email" },
+  { subject: "Adobe Acrobat keeps crashing on launch", team: "Software",
+    body: "Acrobat Pro crashes immediately on open since the latest version. Reinstalled twice, same result. I need it to process signed contracts.",
+    requester: "evan.cole@atko.email" },
+  { subject: "Replacement keyboard and dock request", team: "Hardware",
+    body: "Several keys on my keyboard stopped working and my dock no longer charges the laptop. Requesting replacement hardware.",
+    requester: "sam.osei@atko.email" },
+  { subject: "DNS resolution failing for internal sites", team: "Networking",
+    body: "Internal tools like wiki.acme.com won't resolve on the corporate network, but public sites load fine. Started after this morning's maintenance window.",
+    requester: "raj.patel@atko.email" },
+  { subject: "VPN split-tunnel not routing to the data center", team: "Networking",
+    body: "I can reach the internet on VPN but not the 10.20.x.x data-center subnet. Other people on my team can. Blocks my deploys.",
+    requester: "mia.torres@atko.email" },
+  { subject: "Need admin role on the Payments Jira project", team: "Access Management",
+    body: "I'm the new lead for Payments but only have contributor access in Jira. Need project-admin to manage the board and workflows.",
+    requester: "kofi.mensah@atko.email" },
+  { subject: "Can't open the shared HR drive after my transfer", team: "Access Management",
+    body: "Moved from Support to People Ops last week and the HR shared drive shows 'access denied'. Manager approved the move already.",
+    requester: "hana.kim@atko.email" },
+  { subject: "External monitor flickers on the new dock", team: "Hardware",
+    body: "My 4K monitor flickers every few seconds through the new USB-C dock, but is fine plugged in directly. Swapped the cable, no change.",
+    requester: "diego.romero@atko.email" },
+  { subject: "Webcam not detected after BIOS update", team: "Hardware",
+    body: "After the firmware update pushed last night, the built-in webcam is gone from Device Manager. I have client calls all day.",
+    requester: "ava.nguyen@atko.email" },
+  { subject: "Excel macros disabled by policy during finance close", team: "Software",
+    body: "Group policy is blocking macros in Excel and our close workbook depends on them. Need an exception for the finance team this week.",
+    requester: "liam.oconnor@atko.email" },
+  { subject: "Zoom add-in missing from Outlook", team: "Software",
+    body: "The Zoom scheduling add-in disappeared from the Outlook ribbon after the last update. Reinstalling Zoom didn't bring it back.",
+    requester: "sofia.rossi@atko.email" },
 ];
 
 // A few resolved tickets so the queue looks like a real, lived-in desk.
 export const SEED_QUEUE: Ticket[] = [
-  { id: "INC-4469", subject: "MFA prompt loop on new phone", body: "", requester: "owen.diaz@acme.com",
+  { id: "INC-4469", subject: "MFA prompt loop on new phone", body: "", requester: "owen.diaz@atko.email",
     team: "Access Management", status: "resolved", issueKey: "ITSD-118", createdAgo: "2h ago" },
-  { id: "INC-4470", subject: "Monitor not detected via dock", body: "", requester: "amy.chen@acme.com",
+  { id: "INC-4470", subject: "Monitor not detected via dock", body: "", requester: "amy.chen@atko.email",
     team: "Hardware", status: "resolved", issueKey: "ITSD-119", createdAgo: "1h ago" },
 ];
 
-let idx = 0;
+// Each simulated inbound is a fresh incident number (like a real ticketing
+// system) picked at random from the pool, avoiding an immediate repeat, so
+// the demo never feels stuck on one ticket.
+let lastPoolIdx = -1;
+let incidentCounter = 4479;
+const teamById: Record<string, string> = {}; // pool team, for the offline mock only
+
 export function nextTicket(): Ticket {
-  const t = POOL[idx % POOL.length];
-  idx += 1;
-  return { id: t.id, subject: t.subject, body: t.body, requester: t.requester,
-           status: "new", createdAgo: "just now" };
+  let i = Math.floor(Math.random() * POOL.length);
+  if (POOL.length > 1) while (i === lastPoolIdx) i = Math.floor(Math.random() * POOL.length);
+  lastPoolIdx = i;
+  const p = POOL[i];
+  const id = `INC-${incidentCounter++}`;
+  teamById[id] = p.team;
+  return { id, subject: p.subject, body: p.body, requester: p.requester, status: "new", createdAgo: "just now" };
 }
 
-const ISS = "https://oktaforai.oktapreview.com/oauth2/aus10rq0j6dqzBIY51d8";
+const RES_ISS = "https://oktaforai.oktapreview.com/oauth2/aus10rq0j6dqzBIY51d8";
+const FUL_ISS = "https://oktaforai.oktapreview.com/oauth2/aus10u0cl35sfAoaU1d8";
+
+// Offline mock resolution the agent "sends" when a case auto-resolves.
+function mockResolution(t: Ticket): string {
+  const who = t.requester.split("@")[0].split(".")[0];
+  const name = who.charAt(0).toUpperCase() + who.slice(1);
+  return `Hi ${name}, we resolved "${t.subject}". We applied the standard fix and included step-by-step `
+    + `instructions so you can confirm it on your end. This ticket is now closed in Jira. Reply here to reopen it `
+    + `if anything is still not working.`;
+}
 
 function sequence(t: Ticket): ActivityEvent[] {
-  const team = POOL.find((p) => p.id === t.id)?.team || "Networking";
-  const issueKey = `ITSD-${120 + (idx % 60)}`;
-  const triage = "Atlas Triage";
-  const resolve = "Atlas Resolution";
+  const team = teamById[t.id] || "Software";
+  const issueKey = `ITSD-${120 + (incidentCounter % 60)}`;
+  // some cases auto-resolve (agent solves + closes), others route to a human
+  const auto = Math.random() < 0.5;
+  const resolution = auto ? mockResolution(t) : "";
+  const jiraEvent: ActivityEvent = auto
+    ? { step: "jira_write", actor: "Fulfillment", actorKind: "fulfill", primary: true,
+        plain: `Auto-resolved ${issueKey} · replied to ${t.requester} · closed in Jira`,
+        tech: "POST customer reply comment, then transition the issue to Done",
+        data: { issue_key: issueKey, team, auto_resolved: true, resolution, requester: t.requester, jira_status: "Done" },
+        system_log_id: "jira.issue.resolved" }
+    : { step: "jira_write", actor: "Fulfillment", actorKind: "fulfill", primary: true,
+        plain: `Filed ${issueKey} in Jira · routed to ${team} · 2 comments`,
+        tech: "POST /rest/api/3/issue, created, componented, labeled, commented",
+        data: { issue_key: issueKey, team, auto_resolved: false }, system_log_id: "jira.issue.created" };
   return [
     { step: "inbound", actor: "Intake", actorKind: "intake", primary: true,
       plain: "Received via intake API", tech: `${t.id} ingested from the external ticketing system` },
-    { step: "intake_auth", actor: triage, actorKind: "triage",
-      plain: "Atlas Triage picked up the ticket",
-      tech: "Authenticated to Okta with its workload identity (private_key_jwt) — no human in the loop",
-      system_log_id: "app.oauth2.token.grant" },
-    { step: "intake_classify", actor: triage, actorKind: "triage", primary: true,
+    { step: "intake_auth", actor: "Triage", actorKind: "triage",
+      plain: "Triage picked up the ticket",
+      tech: "Claude reads the ticket. Okta isn't involved yet, that starts at the handoff below." },
+    { step: "intake_classify", actor: "Triage", actorKind: "triage", primary: true,
       plain: `Classified as ${team} · routed to the ${team} team`,
-      tech: "Claude classified the ticket and selected the destination team" },
-    { step: "a2a_exchange", actor: `${triage} → ${resolve}`, actorKind: "triage", primary: true,
-      plain: `Handed off to ${resolve}`,
-      tech: "Agent-to-agent delegation over Okta (machine context, scope agent.invoke). The issued token carries an act claim — the verifiable chain of custody.",
-      token_claims: { sub: "wlp · Atlas Triage", act: { sub: "wlp · Atlas Triage", scope: "agent.invoke" },
-        aud: "https://atlas.acme.example/resolution", scp: ["agent.invoke"], iss: ISS },
+      tech: "Claude classified the ticket and selected the destination team",
+      data: { department: team } },
+    // Hop 1: Triage → Resolution (one agent in the act chain)
+    { step: "a2a_exchange", actor: "Triage → Resolution", actorKind: "triage", primary: true,
+      plain: "Handed off to Resolution",
+      tech: "Intake Service bootstraps (client_credentials); Triage exchanges that for an id-jag and invokes Resolution, agent → agent.",
+      token_claims: {
+        sub: "0oa10s89mqikXzZo41d8",
+        act: { sub: "wlp10qjmsgdQROgxE1d8", sub_profile: "ai_agent",
+               act: { sub: "0oa10s89mqikXzZo41d8", sub_profile: "service" } },
+        aud: "https://atlas.acme.example/resolution", scp: ["agent.invoke"], iss: RES_ISS,
+      },
       system_log_id: "app.oauth2.token.grant.id_jag" },
-    { step: "opa_vault", actor: resolve, actorKind: "resolve",
+    { step: "devops_draft", actor: "Resolution", actorKind: "resolve", primary: true,
+      plain: auto ? "Assessed the case as self-serviceable, drafted a customer resolution" : "Decided the fix and drafted work notes",
+      tech: "Claude drafts the resolution. Resolution has no prod credential, it delegates execution to Fulfillment." },
+    // Hop 2: Resolution → Fulfillment (TWO agents in the act chain)
+    { step: "a2a_fulfillment", actor: "Resolution → Fulfillment", actorKind: "fulfill", primary: true,
+      plain: "Delegated execution to Fulfillment",
+      tech: "Resolution invokes Fulfillment. The token's act claim now nests BOTH agents, Resolution ← Triage ← Intake Service.",
+      token_claims: {
+        sub: "0oa10s89mqikXzZo41d8",
+        act: { sub: "wlp10qjml8mNlyBVK1d8", sub_profile: "ai_agent",
+               act: { sub: "wlp10qjmsgdQROgxE1d8", sub_profile: "ai_agent",
+                      act: { sub: "0oa10s89mqikXzZo41d8", sub_profile: "service" } } },
+        aud: "https://atlas.acme.example/fulfillment", scp: ["agent.invoke"], iss: FUL_ISS,
+      },
+      system_log_id: "app.oauth2.token.grant.id_jag" },
+    { step: "opa_vault", actor: "Fulfillment", actorKind: "fulfill",
       plain: "Retrieved Jira credential securely",
-      tech: "Jira credential released from the Okta OPA vault at runtime (STS vaulted-secret) — never stored in agent code",
-      token_claims: { resource: "orn:okta:opa:…:secrets:jira-atlas", requested_token_type: "vaulted-secret" },
+      tech: "Jira credential released from the Okta OPA vault at runtime (STS vaulted-secret), never stored in agent code",
       system_log_id: "app.credential.vault.access" },
-    { step: "devops_draft", actor: resolve, actorKind: "resolve", primary: true,
-      plain: "Drafted an acknowledgement and a first next step",
-      tech: "Claude drafted two work-note comments for the ticket" },
-    { step: "jira_write", actor: resolve, actorKind: "resolve", primary: true,
-      plain: `Filed ${issueKey} in Jira · ${team} · labeled · 2 comments`,
-      tech: "POST /rest/api/3/issue — created, componented, labeled, commented",
-      data: { issue_key: issueKey, team }, system_log_id: "jira.issue.created" },
+    jiraEvent,
     { step: "done", actor: "Atlas", actorKind: "okta", primary: true,
-      plain: "Resolved and tracked in Jira",
-      tech: "Every hop attributed to a governed identity · fully revocable" },
+      plain: auto ? "Case auto-resolved by the agent · customer notified" : `Filed and routed to ${team} for a specialist`,
+      data: { auto_resolved: auto },
+      tech: "Three agents, each least-privileged. Every hop attributed and revocable." },
   ];
+}
+
+export type PipelineResult = { issueKey?: string; issueUrl?: string; team?: string; autoResolved?: boolean; resolution?: string };
+
+// Accumulate result fields as events stream in (works for live + mock alike).
+function absorb(result: PipelineResult, e: ActivityEvent) {
+  const d = e.data;
+  if (!d) return;
+  if (d.issue_key) result.issueKey = String(d.issue_key);
+  if (d.issue_url) result.issueUrl = String(d.issue_url);
+  if (d.team) result.team = String(d.team);
+  if ("auto_resolved" in d) result.autoResolved = Boolean(d.auto_resolved);
+  if (d.resolution) result.resolution = String(d.resolution);
 }
 
 export async function runPipeline(
   ticket: Ticket,
   onEvent: (e: ActivityEvent) => void,
   signal?: AbortSignal,
-): Promise<{ issueKey?: string; team?: string }> {
-  let result: { issueKey?: string; team?: string } = {};
+): Promise<PipelineResult> {
+  const result: PipelineResult = {};
   if (ORCH) {
-    const res = await fetch(`${ORCH}/api/run?ticket_id=${encodeURIComponent(ticket.id)}`, { signal });
+    // Send the ACTUAL ticket so the backend classifies/files what's on screen,
+    // not a seed ticket. This is what makes "what you see = what ran" true.
+    const qs = new URLSearchParams({ ticket_id: ticket.id, title: ticket.subject, body: ticket.body, requester: ticket.requester });
+    const res = await fetch(`${ORCH}/api/run?${qs.toString()}`, { signal });
     const reader = res.body!.getReader();
     const dec = new TextDecoder();
     let buf = "";
@@ -126,7 +249,7 @@ export async function runPipeline(
         const line = p.split("\n").find((l) => l.startsWith("data: "));
         if (!line) continue;
         const e: ActivityEvent = JSON.parse(line.slice(6));
-        if (e.data?.issue_key) result = { issueKey: String(e.data.issue_key), team: String(e.data.team || "") };
+        absorb(result, e);
         onEvent(e);
       }
     }
@@ -138,7 +261,7 @@ export async function runPipeline(
     await delay(360);
     if (signal?.aborted) return result;
     onEvent({ ...e, status: "ok", ts: Date.now() });
-    if (e.data?.issue_key) result = { issueKey: String(e.data.issue_key), team: String(e.data.team || "") };
+    absorb(result, e);
     await delay(440);
   }
   return result;

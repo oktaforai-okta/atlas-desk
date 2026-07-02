@@ -1,19 +1,27 @@
-"""A2A machine-context token exchange.
+"""A2A machine-context token exchange, the VERIFIED 3-step flow.
 
-Implements the two-step machine-context flow learned from the live working
-delegation (ProGearSales -> ProGearInventory) in the oktaforai tenant:
+Chain: Intake Service Client -> Atlas Triage -> Atlas Resolution (the target).
 
-  1. The delegating agent (Atlas Triage) obtains its OWN access token from an
-     Okta authorization server via client_credentials + private_key_jwt.
-  2. That access token is presented as the subject_token in an RFC 8693
-     token-exchange at the target resource's A2A Custom AS, producing a scoped
-     token whose `act` claim records the delegating agent (the chain of custody).
+  STEP 1  Service client mints T1 from Triage's own CAS
+          grant=client_credentials, scope=agent.invoke, resource=<Triage resourceUrl>
+          => T1.aud = Triage's A2A resourceUrl
+  STEP 2  Atlas Triage exchanges T1 at the ORG AS for an id-jag targeting the
+          resource's CAS
+          grant=token-exchange, subject_token=T1, requested_token_type=id-jag,
+          audience=<target CAS issuer>, resource=<target resourceUrl>,
+          client_assertion signed by Triage
+  STEP 3  Atlas Triage redeems the id-jag at the target's CAS for the final
+          A2A token
+          grant=jwt-bearer, assertion=id-jag, client_assertion signed by Triage
+          => access_token carries nested `act`: { target <- Triage <- ServiceClient }
 
-No user / id_token anywhere — this is machine context.
+Verified against the live oktaforai tenant 2026-07-01 (scripts/a2a_flow.py).
+Agents cannot use client_credentials (grant types = token-exchange + jwt-bearer
+only), that's why a service client mints T1, not the caller agent itself. The
+caller agent must ALSO be a registered A2A resource ("dual citizenship") so
+T1's audience is valid.
 """
 from __future__ import annotations
-
-from typing import Optional
 
 import httpx
 
@@ -21,64 +29,94 @@ from okta.client_assertion import build_client_assertion
 
 GRANT_CLIENT_CREDENTIALS = "client_credentials"
 GRANT_TOKEN_EXCHANGE = "urn:ietf:params:oauth:grant-type:token-exchange"
+GRANT_JWT_BEARER = "urn:ietf:params:oauth:grant-type:jwt-bearer"
 SUBJECT_TYPE_ACCESS_TOKEN = "urn:ietf:params:oauth:token-type:access_token"
+REQUESTED_TYPE_ID_JAG = "urn:ietf:params:oauth:token-type:id-jag"
 CLIENT_ASSERTION_TYPE = "urn:ietf:params:oauth:client-assertion-type:jwt-bearer"
 
+# Atlas Triage's dual-citizenship registration (Okta Console, 2026-07-01).
+# resourceUrl cannot be changed without deleting + recreating the a2a-server,
+# so these are fixed constants rather than env vars.
+TRIAGE_CAS_ID = "aus10sd70du8BMzlL1d8"  # "Atlas Triage A2A"
+TRIAGE_RESOURCE_URL = "https://atlas.acme.example/triage"
 
-def get_agent_access_token(
-    principal_id: str,
-    private_jwk: dict,
-    token_endpoint: str,
-    scope: Optional[str] = None,
+
+def mint_service_token(
+    okta_domain: str,
+    service_client_id: str,
+    service_client_secret: str,
+    scope: str = "agent.invoke",
 ) -> dict:
-    """Step 1: agent obtains its own access token (client_credentials + private_key_jwt).
+    """Step 1: the Intake Service client mints T1 from Triage's own CAS.
 
-    Returns the parsed token response (or error body) plus http status under "_status".
+    T1.aud = Triage's A2A resourceUrl. Returns the parsed token response (or
+    error body) plus HTTP status under "_status".
     """
-    assertion = build_client_assertion(principal_id, token_endpoint, private_jwk)
-    form = {
-        "grant_type": GRANT_CLIENT_CREDENTIALS,
-        "client_assertion_type": CLIENT_ASSERTION_TYPE,
-        "client_assertion": assertion,
-        "client_id": principal_id,
-    }
-    if scope:
-        form["scope"] = scope
+    endpoint = f"https://{okta_domain}/oauth2/{TRIAGE_CAS_ID}/v1/token"
     with httpx.Client(timeout=30) as c:
-        r = c.post(token_endpoint, data=form,
-                   headers={"Content-Type": "application/x-www-form-urlencoded"})
+        r = c.post(endpoint, data={
+            "grant_type": GRANT_CLIENT_CREDENTIALS,
+            "scope": scope,
+            "resource": TRIAGE_RESOURCE_URL,
+            "client_id": service_client_id,
+            "client_secret": service_client_secret,
+        })
     body = _json(r)
     body["_status"] = r.status_code
     return body
 
 
-def exchange_for_agent_resource(
-    subject_access_token: str,
-    principal_id: str,
-    private_jwk: dict,
-    cas_token_endpoint: str,
-    audience: str,
-    scope: str,
+def exchange_for_id_jag(
+    t1_access_token: str,
+    triage_principal_id: str,
+    triage_jwk: dict,
+    okta_domain: str,
+    target_cas_issuer: str,
+    target_resource_url: str,
+    scope: str = "agent.invoke",
 ) -> dict:
-    """Step 2: token-exchange the subject access token for a resource-scoped token.
+    """Step 2: Atlas Triage exchanges T1 at the ORG AS for an id-jag targeting the resource.
 
-    The issued token carries `sub` (the delegating principal) + `act` (chain of
-    custody). Returns the parsed response plus "_status".
+    Returns the parsed response plus "_status".
     """
-    assertion = build_client_assertion(principal_id, cas_token_endpoint, private_jwk)
-    form = {
-        "grant_type": GRANT_TOKEN_EXCHANGE,
-        "subject_token": subject_access_token,
-        "subject_token_type": SUBJECT_TYPE_ACCESS_TOKEN,
-        "audience": audience,
-        "scope": scope,
-        "client_assertion_type": CLIENT_ASSERTION_TYPE,
-        "client_assertion": assertion,
-        "client_id": principal_id,
-    }
+    org_token_endpoint = f"https://{okta_domain}/oauth2/v1/token"
+    assertion = build_client_assertion(triage_principal_id, org_token_endpoint, triage_jwk)
     with httpx.Client(timeout=30) as c:
-        r = c.post(cas_token_endpoint, data=form,
-                   headers={"Content-Type": "application/x-www-form-urlencoded"})
+        r = c.post(org_token_endpoint, data={
+            "grant_type": GRANT_TOKEN_EXCHANGE,
+            "subject_token": t1_access_token,
+            "subject_token_type": SUBJECT_TYPE_ACCESS_TOKEN,
+            "requested_token_type": REQUESTED_TYPE_ID_JAG,
+            "audience": target_cas_issuer,
+            "resource": target_resource_url,
+            "scope": scope,
+            "client_assertion_type": CLIENT_ASSERTION_TYPE,
+            "client_assertion": assertion,
+        })
+    body = _json(r)
+    body["_status"] = r.status_code
+    return body
+
+
+def redeem_id_jag_for_a2a_token(
+    id_jag: str,
+    triage_principal_id: str,
+    triage_jwk: dict,
+    target_cas_token_endpoint: str,
+) -> dict:
+    """Step 3: Atlas Triage redeems the id-jag at the target's CAS for the final A2A token.
+
+    The issued access_token carries the nested `act` chain of custody. Returns
+    the parsed response plus "_status".
+    """
+    assertion = build_client_assertion(triage_principal_id, target_cas_token_endpoint, triage_jwk)
+    with httpx.Client(timeout=30) as c:
+        r = c.post(target_cas_token_endpoint, data={
+            "grant_type": GRANT_JWT_BEARER,
+            "assertion": id_jag,
+            "client_assertion_type": CLIENT_ASSERTION_TYPE,
+            "client_assertion": assertion,
+        })
     body = _json(r)
     body["_status"] = r.status_code
     return body

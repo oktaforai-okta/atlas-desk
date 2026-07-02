@@ -1,4 +1,5 @@
 import { Bot, ShieldCheck, KeyRound, ArrowLeftRight, FileCheck2, User } from "lucide-react";
+import AgentStatusBadge from "@/components/AgentStatusBadge";
 
 export const metadata = { title: "Agents · Atlas Service Desk" };
 
@@ -20,11 +21,23 @@ const AGENTS = [
     kind: "AI Agent · workload identity + A2A resource",
     color: "text-resolve",
     ring: "ring-resolve/30 bg-resolve/10",
-    purpose: "Receives delegated tickets, drafts resolution notes, and files them in Jira.",
+    purpose: "Receives delegated tickets, decides the fix, and drafts resolution notes, then delegates execution to Fulfillment. Has no production credential.",
     access: [
       { icon: ShieldCheck, t: "Callable resource (A2A)", d: "protected by the Atlas Resolution A2A authorization server" },
+      { icon: ArrowLeftRight, t: "Invoke Atlas Fulfillment", d: "agent-to-agent delegation · scope agent.invoke" },
+    ],
+  },
+  {
+    name: "Atlas Fulfillment Agent",
+    wlp: "wlp10tzrk45bDrCMK1d8",
+    kind: "AI Agent · workload identity + A2A resource",
+    color: "text-fulfill",
+    ring: "ring-fulfill/30 bg-fulfill/10",
+    purpose: "The only agent trusted on production. Executes the privileged action: pulls the OPA-vaulted Jira credential and files/updates the ticket.",
+    access: [
+      { icon: ShieldCheck, t: "Callable resource (A2A)", d: "protected by the Atlas Fulfillment A2A authorization server" },
       { icon: KeyRound, t: "Jira credential (OPA vault)", d: "released just-in-time · never stored in code" },
-      { icon: FileCheck2, t: "Jira — IT Service Desk", d: "create issue · label · comment" },
+      { icon: FileCheck2, t: "Jira, IT Service Desk", d: "create issue · label · comment" },
     ],
   },
 ];
@@ -36,7 +49,7 @@ export default function AgentsPage() {
       <h1 className="mt-1 text-[26px] font-bold text-bright">Agents</h1>
       <p className="mt-2 text-[16px] leading-relaxed text-body">
         The agents that run the Service Desk are first-class identities in Okta, each with its own
-        credentials, owner, and lifecycle. Not shared service accounts — governed, auditable, revocable.
+        credentials, owner, and lifecycle. Not shared service accounts, governed, auditable, revocable.
       </p>
 
       <div className="mt-6 space-y-4">
@@ -52,9 +65,7 @@ export default function AgentsPage() {
                   <div className="text-2xs text-mute">{a.kind}</div>
                 </div>
               </div>
-              <span className="inline-flex items-center gap-1.5 rounded-md bg-ok/10 px-2 py-1 text-2xs text-ok ring-1 ring-ok/20">
-                <span className="dot bg-ok" /> Active
-              </span>
+              <AgentStatusBadge step="a2a_exchange" />
             </div>
 
             <p className="mt-3 text-[15px] leading-relaxed text-body">{a.purpose}</p>

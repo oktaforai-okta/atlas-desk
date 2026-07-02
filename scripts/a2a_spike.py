@@ -44,7 +44,7 @@ def load_jwk(wlp: str) -> dict:
 def main() -> int:
     jwk = load_jwk(TRIAGE_WLP)
 
-    print("STEP 1 — Atlas Triage obtains its own access token (client_credentials)")
+    print("STEP 1, Atlas Triage obtains its own access token (client_credentials)")
     print(f"  endpoint: {ORG_TOKEN}")
     step1 = get_agent_access_token(TRIAGE_WLP, jwk, ORG_TOKEN, scope=SCOPE)
     print(f"  status: {step1.get('_status')}")
@@ -62,7 +62,7 @@ def main() -> int:
         return 1
     print("  ✓ got subject access token")
 
-    print("\nSTEP 2 — token-exchange at the Atlas Resolution A2A CAS")
+    print("\nSTEP 2, token-exchange at the Atlas Resolution A2A CAS")
     print(f"  endpoint: {CAS_TOKEN}  audience: {AUDIENCE}  scope: {SCOPE}")
     step2 = exchange_for_agent_resource(subject, TRIAGE_WLP, jwk, CAS_TOKEN, AUDIENCE, SCOPE)
     print(f"  status: {step2.get('_status')}")
@@ -79,8 +79,8 @@ def main() -> int:
             print(f"  {k}: {claims[k]}")
 
     has_act = "act" in claims
-    print("\nGATE RESULT:", "GO ✓ — machine-context A2A works and the token carries an act chain of custody."
-          if has_act else "PARTIAL — exchange succeeded but no act claim present (review).")
+    print("\nGATE RESULT:", "GO ✓, machine-context A2A works and the token carries an act chain of custody."
+          if has_act else "PARTIAL, exchange succeeded but no act claim present (review).")
     return 0 if has_act else 2
 
 

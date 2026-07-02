@@ -1,4 +1,4 @@
-# Okta-Secured IT Support Desk — Design Spec
+# Okta-Secured IT Support Desk, Design Spec
 
 **Date:** 2026-06-29
 **Owner:** Johnathan Campos
@@ -11,8 +11,8 @@
 
 Customers conflate two fundamentally different ways an AI agent reaches a downstream system (Jira):
 
-1. **Autonomous / headless** — no human in the loop. The agent acts on its own machine authority.
-2. **Interactive / on-behalf-of-user** — a human is present and the agent borrows their permissions.
+1. **Autonomous / headless**, no human in the loop. The agent acts on its own machine authority.
+2. **Interactive / on-behalf-of-user**, a human is present and the agent borrows their permissions.
 
 They map to different Okta mechanisms, and customers routinely pick the wrong one or assume one tool covers both. This demo runs **one workflow (file an IT ticket into Jira) through both patterns, side by side**, with the Okta identity and chain of custody surfaced visually at every hop.
 
@@ -22,7 +22,7 @@ Reference quality bar: `courtedge-ai-demo` (Next.js 14 frontend on Vercel, FastA
 
 ## 2. The two halves
 
-### Half 1 — Autonomous: agent-to-agent (A2A) + OPA-vaulted credential, no human
+### Half 1, Autonomous: agent-to-agent (A2A) + OPA-vaulted credential, no human
 
 Click **Generate Ticket** → a fake inbound ticket appears ("Can't connect to VPN from home"), simulating arrival from an external ticketing system over an API. A real two-agent, fully governed pipeline then runs with **zero human consent**:
 
@@ -45,7 +45,7 @@ External ticket (faked inbound API)
 
 **Chain of custody (real, not mocked):** external trigger → Intake Agent identity → **A2A delegation with `act` claim** → JCDevOpsAgent identity → **OPA-vaulted credential retrieval** → Jira write. Every hop emits an Okta System Log event; the UI shows the receipts.
 
-### Half 2 — Interactive: STS brokered consent via the MCP Bridge, human present
+### Half 2, Interactive: STS brokered consent via the MCP Bridge, human present
 
 Plain **Claude Code**, connected through the existing `oktaforai-poc` MCP Bridge to a Jira MCP server. The user runs a routine ("tag all my open tickets `reviewed-2026`"). Claude triggers **STS brokered consent** (handled by the Bridge, Claude can't do the exchange itself); the user consents once; Claude acts **as the user**. The app shows a companion panel visualizing the STS flow plus the Okta System Log consent + brokered-token events.
 
@@ -99,7 +99,7 @@ Plain **Claude Code**, connected through the existing `oktaforai-poc` MCP Bridge
 
 1. UI `POST /api/tickets/generate` → backend fabricates a ticket (id, title, body, reporter) from a seed set.
 2. **Intake Agent** authenticates to Okta (private_key_jwt, its own JWK), obtains its access token. Calls Claude API to classify: `{ department, urgency, summary }`.
-3. **A2A token exchange (machine context):** Intake Agent presents its access token as `subject_token` to the A2A CAS, `resource` = JCDevOpsAgent's a2a-server, scope `ticket:file`. Okta validates the delegation-link and issues a scoped access token whose `act` claim records Intake Agent. *(This exact exchange is the first thing verified — see §6.)*
+3. **A2A token exchange (machine context):** Intake Agent presents its access token as `subject_token` to the A2A CAS, `resource` = JCDevOpsAgent's a2a-server, scope `ticket:file`. Okta validates the delegation-link and issues a scoped access token whose `act` claim records Intake Agent. *(This exact exchange is the first thing verified, see §6.)*
 4. **JCDevOpsAgent** receives the call + A2A token (validates `aud`/`act`). Calls Claude API to draft 1–2 resolution comments.
 5. **OPA vault retrieval:** JCDevOpsAgent does an STS vaulted-secret exchange (its JWK client assertion, `resource` = the Secret connection ORN) → Okta releases the Jira API token. Nothing sensitive in Render code/env.
 6. **Jira write:** `POST /rest/api/3/issue` (project `ITSD`, component = department), then add labels + the LLM comments via REST.
@@ -121,15 +121,15 @@ IT-helpdesk aesthetic, polished, dark/light Okta-brand palette.
 
 - **Left rail:** Ticket intake. `Generate Ticket` button; the fabricated ticket card (reporter, title, body).
 - **Center:** Animated agent pipeline. Nodes: `Inbound API → JC IT Intake Agent → (A2A handoff) → JCDevOpsAgent → Jira`. Each node animates as it executes; the A2A edge highlights the `act`-claim handoff.
-- **Right rail — Chain of Custody (the centerpiece):** ordered receipts:
+- **Right rail, Chain of Custody (the centerpiece):** ordered receipts:
   1. ✓ Ticket received (external API)
-  2. ✓ JC IT Intake Agent authenticated to Okta (wlp…) — expandable token
-  3. ✓ A2A token exchange — expandable JWT showing `sub` + `act` chain
+  2. ✓ JC IT Intake Agent authenticated to Okta (wlp…), expandable token
+  3. ✓ A2A token exchange, expandable JWT showing `sub` + `act` chain
   4. ✓ JCDevOpsAgent retrieved vaulted Jira credential from Okta OPA
   5. ✓ LLM routed → **Networking**
-  6. ✓ Posted to Jira as machine identity + labeled — link to the Jira issue
+  6. ✓ Posted to Jira as machine identity + labeled, link to the Jira issue
   - Each receipt links to its Okta **System Log event id**.
-- **Tab switch → "Claude + Bridge (STS)":** the Half-2 companion view — STS flow diagram, consent step, and live System Log of the brokered-token events; instructions to run the routine in Claude Code.
+- **Tab switch → "Claude + Bridge (STS)":** the Half-2 companion view, STS flow diagram, consent step, and live System Log of the brokered-token events; instructions to run the routine in Claude Code.
 - Every element labeled with the Okta concept (A2A, `act` claim, OPA vault, STS consent) so customers connect the dots live.
 
 ---
@@ -151,9 +151,9 @@ A2A is confirmed live in the tenant (multiple a2a-server resources + delegation-
 
 ## 8. Out of scope (YAGNI)
 
-- Real external ticketing integration (we fake the inbound API — that's the point).
+- Real external ticketing integration (we fake the inbound API, that's the point).
 - Multi-tenant / multi-user management UI.
-- A2A self-context (roadmap) — we use machine context, and *name* self-context as the next step.
+- A2A self-context (roadmap), we use machine context, and *name* self-context as the next step.
 - Production hardening, autoscaling, persistence beyond what the demo needs (in-memory/SSE is fine).
 
 ---

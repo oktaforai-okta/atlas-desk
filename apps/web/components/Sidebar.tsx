@@ -2,12 +2,14 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Inbox, BookOpen, Bot, ShieldCheck } from "lucide-react";
+import { Inbox, BookOpen, Bot, ShieldCheck, Network } from "lucide-react";
+import AtlasMark from "@/components/AtlasMark";
 
 const NAV = [
   { href: "/", label: "Service Desk", icon: Inbox },
   { href: "/agents", label: "Agents", icon: Bot },
   { href: "/how-it-works", label: "How it works", icon: BookOpen },
+  { href: "/architecture", label: "Architecture", icon: Network },
 ];
 
 export default function Sidebar() {
@@ -15,12 +17,10 @@ export default function Sidebar() {
   return (
     <aside className="flex w-56 shrink-0 flex-col border-r border-line bg-panel">
       <div className="flex items-center gap-2.5 px-4 py-4">
-        <div className="flex h-7 w-7 items-center justify-center rounded-md bg-accent/15 ring-1 ring-accent/30">
-          <span className="font-mono text-[15px] font-bold text-accent">A</span>
-        </div>
+        <AtlasMark className="h-7 w-7 shrink-0" />
         <div className="leading-tight">
-          <div className="text-[15px] font-semibold text-bright">Atlas</div>
-          <div className="text-2xs text-mute">Service Desk</div>
+          <div className="text-[15px] font-semibold spectrum">Atlas</div>
+          <div className="text-2xs text-mute">Identity Operations Center</div>
         </div>
       </div>
 
@@ -44,7 +44,11 @@ export default function Sidebar() {
       </nav>
 
       <div className="border-t border-line px-4 py-3">
-        <div className="flex items-center gap-2 text-2xs text-mute">
+        <div className="flex items-center gap-2 text-2xs text-soft">
+          <span className="relative flex h-2 w-2">
+            <span className="absolute inline-flex h-full w-full rounded-full bg-ok/60 live-dot" />
+            <span className="relative inline-flex h-2 w-2 rounded-full bg-ok" />
+          </span>
           <ShieldCheck className="h-3.5 w-3.5 text-ok" />
           Secured by Okta
         </div>

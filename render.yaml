@@ -1,18 +1,28 @@
-# Render blueprint for the Atlas Service Desk orchestrator (Part One).
-# Deploys in demo mode immediately; flips to live when the marked env vars are set.
+# Render blueprint for the Atlas Service Desk orchestrator.
+# Deploys in demo mode immediately; flips to LIVE once the sync:false secrets are
+# set in the Render dashboard. Add this service inside the shared demo project
+# (prj-d7gh20a8qa3s73f6lheg), not a personal project.
 services:
   - type: web
     name: atlas-orchestrator
     runtime: python
     rootDir: apps/orchestrator
-    plan: free
+    plan: starter            # always-on, no cold starts (for live customer demos)
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /healthz
     envVars:
       - key: OKTA_DOMAIN
         value: oktaforai.oktapreview.com
-      # --- set these to flip from demo to LIVE (sync:false = set in dashboard, not committed) ---
+      - key: JIRA_PROJECT_KEY
+        value: ITSD
+      - key: JIRA_ASSIGNEE_EMAIL
+        value: oktaforai@atko.email     # every case is assigned to this shared account
+      - key: AUTO_RESOLVE_RATE
+        value: "0.5"                     # fraction of cases the agents auto-resolve
+      - key: A2A_SCOPE
+        value: agent.invoke
+      # ---- agent identities (workload principals) ----
       - key: INTAKE_AGENT_ID
         value: wlp10qjmsgdQROgxE1d8
       - key: DEVOPS_AGENT_ID
@@ -21,19 +31,26 @@ services:
         value: https://oktaforai.oktapreview.com/oauth2/aus10rq0j6dqzBIY51d8
       - key: A2A_AUDIENCE
         value: https://atlas.acme.example/resolution
-      - key: A2A_SCOPE
-        value: agent.invoke
+      # ---- secrets: set these in the Render dashboard (sync:false = never committed) ----
+      # A2A chain bootstrap (client_credentials that mints the first token):
+      - key: INTAKE_SERVICE_CLIENT_ID
+        sync: false
+      - key: INTAKE_SERVICE_SECRET
+        sync: false
+      # agent private keys (paste the JSON of each .private.jwk.json):
       - key: INTAKE_PRIVATE_JWK
         sync: false
       - key: DEVOPS_PRIVATE_JWK
         sync: false
-      - key: JIRA_SECRET_RESOURCE_ORN
-        sync: false
+      # Jira (real writes + resolve + assign):
       - key: JIRA_BASE_URL
         sync: false
       - key: ATLASSIAN_EMAIL
         sync: false
-      - key: JIRA_PROJECT_KEY
-        value: ITSD
+      - key: ATLASSIAN_API_TOKEN
+        sync: false
+      - key: JIRA_SECRET_RESOURCE_ORN
+        sync: false
+      # Claude (triage + resolution drafting):
       - key: ANTHROPIC_API_KEY
         sync: false

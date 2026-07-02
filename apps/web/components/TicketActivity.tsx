@@ -3,7 +3,7 @@
 import { motion, AnimatePresence } from "framer-motion";
 import { BookOpen } from "lucide-react";
 import Link from "next/link";
-import type { ActivityEvent } from "@/lib/events";
+import { latestByStep, type ActivityEvent } from "@/lib/events";
 
 const ACTOR_COLOR: Record<string, string> = {
   intake: "bg-mute",
@@ -14,9 +14,7 @@ const ACTOR_COLOR: Record<string, string> = {
 
 export default function TicketActivity({ events }: { events: ActivityEvent[] }) {
   // collapse running+ok of the same step; keep only primary (product) lines here
-  const latest = new Map<string, ActivityEvent>();
-  for (const e of events) latest.set(e.step, e);
-  const rows = Array.from(latest.values()).filter((e) => e.primary);
+  const rows = Array.from(latestByStep(events).values()).filter((e) => e.primary);
 
   if (rows.length === 0) {
     return (
@@ -72,12 +70,20 @@ export default function TicketActivity({ events }: { events: ActivityEvent[] }) 
                     {running && <span className="ml-1 text-mute">…</span>}
                   </div>
                   {e.data?.issue_key ? (
-                    <a
-                      href="#"
-                      className="mt-1.5 inline-flex items-center gap-1 rounded-md border border-resolve/40 bg-resolve/10 px-2 py-1 font-mono text-[13px] text-resolve hover:bg-resolve/15"
-                    >
-                      {String(e.data.issue_key)} · open in Jira ↗
-                    </a>
+                    e.data.issue_url ? (
+                      <a
+                        href={String(e.data.issue_url)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="mt-1.5 inline-flex items-center gap-1 rounded-md border border-resolve/40 bg-resolve/10 px-2 py-1 font-mono text-[13px] text-resolve hover:bg-resolve/15"
+                      >
+                        {String(e.data.issue_key)} · open in Jira ↗
+                      </a>
+                    ) : (
+                      <span className="mt-1.5 inline-flex items-center gap-1 rounded-md border border-line bg-raised px-2 py-1 font-mono text-[13px] text-soft">
+                        {String(e.data.issue_key)} · demo data, no live issue
+                      </span>
+                    )
                   ) : null}
                 </div>
               </motion.div>

@@ -1,0 +1,8 @@
+# Atlas Service Desk orchestrator (FastAPI). Pinned to the versions verified
+# locally so Render builds exactly what runs on the demo machine.
+fastapi==0.138.2
+uvicorn[standard]==0.49.0
+httpx==0.28.1
+anthropic==0.113.0
+python-jose[cryptography]==3.5.0
+cryptography==49.0.0

@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build a customer demo that runs one workflow (file an IT ticket into Jira) through two Okta-secured agent patterns side by side — autonomous A2A + OPA-vaulted credential, and interactive STS brokered consent via the MCP Bridge — with a live chain-of-custody UI.
+**Goal:** Build a customer demo that runs one workflow (file an IT ticket into Jira) through two Okta-secured agent patterns side by side, autonomous A2A + OPA-vaulted credential, and interactive STS brokered consent via the MCP Bridge, with a live chain-of-custody UI.
 
 **Architecture:** Next.js 14 frontend (Vercel) streams pipeline events from a FastAPI orchestrator (Render). The orchestrator drives two Okta workload-principal agents (`JC IT Intake Agent` → `JCDevOpsAgent`) over a real A2A machine-context token exchange; the downstream agent pulls its Jira credential from Okta OPA and writes to Jira. A separate small Jira MCP server (Render) sits behind the existing MCP Bridge for the interactive STS half driven by live Claude Code.
 
@@ -49,7 +49,7 @@ jc-devops-desk/
 
 ---
 
-## Phase 0 — Repo scaffold
+## Phase 0, Repo scaffold
 
 ### Task 0.1: Monorepo skeleton + env example
 
@@ -93,9 +93,9 @@ git add -A && git commit -m "chore: monorepo skeleton + env example"
 
 ---
 
-## Phase 1 — Okta foundation (idempotent setup script)
+## Phase 1, Okta foundation (idempotent setup script)
 
-> Run locally with `OKTA_SSWS_TOKEN`. The script is idempotent (look up by name before create). Owners are required for activation — assign the current admin user as owner.
+> Run locally with `OKTA_SSWS_TOKEN`. The script is idempotent (look up by name before create). Owners are required for activation, assign the current admin user as owner.
 
 ### Task 1.1: `client_assertion.py` (shared private_key_jwt builder)
 
@@ -122,7 +122,7 @@ def test_assertion_has_iss_sub_aud_and_verifies():
 - [ ] **Step 4:** Run test → PASS.
 - [ ] **Step 5:** Commit.
 
-### Task 1.2: `okta_setup.py` — create agents + JWKs
+### Task 1.2: `okta_setup.py`, create agents + JWKs
 
 **Files:** Create `scripts/okta_setup.py`
 
@@ -132,7 +132,7 @@ def test_assertion_has_iss_sub_aud_and_verifies():
 - [ ] **Step 4: Verify (real):** re-list agents; assert both are `ACTIVE` with one active credential. Print ids.
 - [ ] **Step 5:** Commit `scripts/okta_setup.py` (no secrets committed).
 
-### Task 1.3: `okta_setup.py` — JCDevOpsAgent as A2A resource + CAS + scope
+### Task 1.3: `okta_setup.py`, JCDevOpsAgent as A2A resource + CAS + scope
 
 **Files:** Modify `scripts/okta_setup.py`
 
@@ -141,7 +141,7 @@ def test_assertion_has_iss_sub_aud_and_verifies():
 - [ ] **Step 3: Verify (real):** `GET /resource-servers/api/v1/a2a-servers/{devopsAgentId}` → 200 with `resourceUrl` + authorization-servers link. Record `A2A_CAS_ISSUER` + `A2A_AUDIENCE` into `.env`.
 - [ ] **Step 4:** Commit.
 
-### Task 1.4: `okta_setup.py` — delegation-link Intake → JCDevOps
+### Task 1.4: `okta_setup.py`, delegation-link Intake → JCDevOps
 
 **Files:** Modify `scripts/okta_setup.py`
 
@@ -149,7 +149,7 @@ def test_assertion_has_iss_sub_aud_and_verifies():
 - [ ] **Step 2: Verify (real):** `GET /workload-principals/api/v1/delegation-links?filter=to.resourceOrn eq "<jcdevops orn>"` → returns the link.
 - [ ] **Step 3:** Commit.
 
-### Task 1.5: `okta_setup.py` — OPA Secret + Secret connection on JCDevOpsAgent
+### Task 1.5: `okta_setup.py`, OPA Secret + Secret connection on JCDevOpsAgent
 
 **Files:** Modify `scripts/okta_setup.py`
 
@@ -162,7 +162,7 @@ def test_assertion_has_iss_sub_aud_and_verifies():
 
 ---
 
-## Phase 2 — Milestone 0 GATE: prove machine-context A2A exchange
+## Phase 2, Milestone 0 GATE: prove machine-context A2A exchange
 
 ### Task 2.1: `a2a_exchange.py` + `a2a_spike.py`
 
@@ -182,7 +182,7 @@ Expected: prints HTTP 200 and the decoded issued token containing an **`act` cla
 
 ---
 
-## Phase 3 — Orchestrator (Half 1, autonomous)
+## Phase 3, Orchestrator (Half 1, autonomous)
 
 ### Task 3.1: Ticket seeds (TDD)
 
@@ -223,7 +223,7 @@ Expected: prints HTTP 200 and the decoded issued token containing an **`act` cla
 
 ---
 
-## Phase 4 — Frontend (Vercel)
+## Phase 4, Frontend (Vercel)
 
 ### Task 4.1: Next.js app shell + Tailwind + Okta-brand theme
 
@@ -245,7 +245,7 @@ Expected: prints HTTP 200 and the decoded issued token containing an **`act` cla
 
 ---
 
-## Phase 5 — Half 2 (interactive STS via MCP Bridge)
+## Phase 5, Half 2 (interactive STS via MCP Bridge)
 
 ### Task 5.1: Jira MCP server
 
@@ -266,7 +266,7 @@ Expected: prints HTTP 200 and the decoded issued token containing an **`act` cla
 
 ---
 
-## Phase 6 — Deploy + polish
+## Phase 6, Deploy + polish
 
 - [ ] Render: deploy `orchestrator` + `jira-mcp` (env vars incl. `ANTHROPIC_API_KEY`, agent JWKs, ORNs). `render login` required (user-run).
 - [ ] Vercel: deploy `apps/web` (env: orchestrator URL). `gh repo create astro7982/jc-devops-desk` + push.
