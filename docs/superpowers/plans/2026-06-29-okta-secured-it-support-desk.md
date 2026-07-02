@@ -17,7 +17,7 @@
 ## File Structure
 
 ```
-jc-devops-desk/
+atlas-desk/
   apps/
     web/                         # Next.js 14 (Vercel)
       app/page.tsx               # desk shell, tab switch
@@ -269,7 +269,7 @@ Expected: prints HTTP 200 and the decoded issued token containing an **`act` cla
 ## Phase 6, Deploy + polish
 
 - [ ] Render: deploy `orchestrator` + `jira-mcp` (env vars incl. `ANTHROPIC_API_KEY`, agent JWKs, ORNs). `render login` required (user-run).
-- [ ] Vercel: deploy `apps/web` (env: orchestrator URL). `gh repo create astro7982/jc-devops-desk` + push.
+- [ ] Vercel: deploy `apps/web` (env: orchestrator URL). `gh repo create oktaforai-okta/atlas-desk` + push.
 - [ ] End-to-end dry run of both halves; record the talk track; README with the payoff table.
 
 ---
