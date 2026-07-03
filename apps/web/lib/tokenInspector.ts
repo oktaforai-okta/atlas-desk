@@ -26,12 +26,12 @@ export interface TokenTabMeta {
 }
 
 export const TOKEN_TABS: TokenTabMeta[] = [
-  { id: "t1", title: "1 · Bootstrap", subtitle: "Access Token", agentGeneric: "Intake Service", color: SERVICE_COLOR },
-  { id: "idjag1", title: "2 · Delegation grant", subtitle: "ID-JAG", agentGeneric: "Agent 1", agentReal: "Triage", color: TRIAGE_COLOR },
-  { id: "t_res", title: "3 · Agent 2's token", subtitle: "Access Token · act nests 1", agentGeneric: "Agent 2", agentReal: "Resolution", color: RESOLVE_COLOR },
-  { id: "idjag2", title: "4 · Delegation grant", subtitle: "ID-JAG", agentGeneric: "Agent 2", agentReal: "Resolution", color: RESOLVE_COLOR },
-  { id: "t_ful", title: "5 · Agent 3's token", subtitle: "Access Token · act nests 2", agentGeneric: "Agent 3", agentReal: "Fulfillment", color: FULFILL_COLOR, final: true },
-  { id: "vault", title: "6 · Vault exchange", subtitle: "Credential release", agentGeneric: "Agent 3", agentReal: "Fulfillment", color: VAULT_COLOR, isVault: true },
+  { id: "t1", title: "Bootstrap", subtitle: "Access Token", agentGeneric: "Intake Service", color: SERVICE_COLOR },
+  { id: "idjag1", title: "Delegation grant", subtitle: "ID-JAG", agentGeneric: "Agent 1", agentReal: "Triage", color: TRIAGE_COLOR },
+  { id: "t_res", title: "Agent 2's token", subtitle: "Access Token · act nests 1", agentGeneric: "Agent 2", agentReal: "Resolution", color: RESOLVE_COLOR },
+  { id: "idjag2", title: "Delegation grant", subtitle: "ID-JAG", agentGeneric: "Agent 2", agentReal: "Resolution", color: RESOLVE_COLOR },
+  { id: "t_ful", title: "Agent 3's token", subtitle: "Access Token · act nests 2", agentGeneric: "Agent 3", agentReal: "Fulfillment", color: FULFILL_COLOR, final: true },
+  { id: "vault", title: "Vault exchange", subtitle: "Credential release", agentGeneric: "Agent 3", agentReal: "Fulfillment", color: VAULT_COLOR, isVault: true },
 ];
 
 export interface DecodedJWT {
@@ -39,9 +39,18 @@ export interface DecodedJWT {
   payload: Record<string, unknown>;
 }
 
+// atob/btoa work in terms of Latin-1 "binary strings" (one byte per char code),
+// while claim values are UTF-8 (this pipeline's illustrative claims use "·").
+// Node's Buffer defaults to UTF-8, so decoding/encoding without going through
+// TextDecoder/TextEncoder here produces different bytes server- vs client-side
+// for any non-ASCII character, a real SSR/CSR hydration mismatch, not just a
+// cosmetic one, since the resulting JSON differs by more than whitespace.
 function b64urlDecode(seg: string): string {
   const padded = seg.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat((4 - (seg.length % 4)) % 4);
-  return typeof window !== "undefined" ? atob(padded) : Buffer.from(padded, "base64").toString("utf-8");
+  if (typeof window === "undefined") return Buffer.from(padded, "base64").toString("utf-8");
+  const binary = atob(padded);
+  const bytes = Uint8Array.from(binary, (c) => c.charCodeAt(0));
+  return new TextDecoder().decode(bytes);
 }
 
 // Split on ".", base64url-decode header + payload, parse as JSON. No signature
@@ -59,7 +68,9 @@ export function decodeJwt(raw: string): DecodedJWT | null {
 
 function b64urlEncode(obj: object): string {
   const json = JSON.stringify(obj);
-  const s = typeof window !== "undefined" ? btoa(json) : Buffer.from(json).toString("base64");
+  const s = typeof window === "undefined"
+    ? Buffer.from(json, "utf-8").toString("base64")
+    : btoa(Array.from(new TextEncoder().encode(json), (b) => String.fromCharCode(b)).join(""));
   return s.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 

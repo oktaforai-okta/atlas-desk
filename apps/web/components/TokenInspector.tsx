@@ -8,7 +8,7 @@
 // cold landing.
 
 import { useMemo, useState } from "react";
-import { ChevronDown, ShieldCheck, KeyRound } from "lucide-react";
+import { Copy, Check, ShieldCheck, KeyRound } from "lucide-react";
 import TokenBlock from "@/components/TokenBlock";
 import { readCapturedRawTokens, type CapturedRawTokens } from "@/lib/events";
 import { TOKEN_TABS, decodeJwt, illustrativeRawTokens, illustrativeVaultData } from "@/lib/tokenInspector";
@@ -27,7 +27,7 @@ export default function TokenInspector() {
   const illustrativeVault = useMemo(() => (isReal ? null : illustrativeVaultData()), [isReal]);
 
   const [selected, setSelected] = useState(TOKEN_TABS[0].id);
-  const [showRaw, setShowRaw] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   const tab = TOKEN_TABS.find((t) => t.id === selected)!;
 
@@ -38,6 +38,17 @@ export default function TokenInspector() {
   const vaultData = tab.isVault ? (isReal ? captured!.vault : illustrativeVault) : null;
   const vaultNotReached = !!tab.isVault && isReal && !vaultData;
 
+  async function copyRaw(value: string | null) {
+    if (!value) return;
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // clipboard unavailable, the raw string below is still visible to select manually
+    }
+  }
+
   return (
     <div className="space-y-4">
       <div className="card p-4">
@@ -46,8 +57,8 @@ export default function TokenInspector() {
             <h1 className="text-[17px] font-semibold text-bright">Token Inspector</h1>
             <p className="mt-1 max-w-2xl text-[13px] leading-relaxed text-soft">
               Every hop in the delegation chain is a real, independently verifiable Okta-issued token, not a claim
-              this UI is asking you to trust. Pick a tab, read the decoded claims, or expand the raw string and
-              check it yourself.
+              this UI is asking you to trust. Pick a tab, read the decoded claims, or copy the encoded string into
+              jwt.io and check it yourself.
             </p>
           </div>
           <a href="https://github.com/oktaforai-okta/atlas-desk/blob/main/docs/ARCHITECTURE.md"
@@ -70,24 +81,20 @@ export default function TokenInspector() {
           {TOKEN_TABS.map((t) => {
             const active = t.id === selected;
             return (
-              <button key={t.id} type="button" onClick={() => { setSelected(t.id); setShowRaw(false); }}
-                className="flex flex-col items-start gap-0.5 rounded-md px-3 py-2 text-left transition-colors"
+              <button key={t.id} type="button" onClick={() => { setSelected(t.id); setCopied(false); }}
+                className="flex items-center gap-1.5 rounded-md px-3 py-2 text-[13px] font-semibold transition-colors"
                 style={{
                   background: active ? hexA(t.color, 0.12) : "transparent",
                   boxShadow: active ? `inset 0 0 0 1px ${hexA(t.color, 0.45)}` : undefined,
+                  color: active ? t.color : "#C9D0DC",
                 }}
               >
-                <span className="flex items-center gap-1.5 text-[13px] font-semibold" style={{ color: active ? t.color : "#C9D0DC" }}>
-                  {t.title}
-                  {t.final && (
-                    <span className="rounded-full border border-warn/40 bg-warn/10 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-warn">
-                      final
-                    </span>
-                  )}
-                </span>
-                <span className="text-2xs text-mute">
-                  {t.agentReal ? `${t.agentGeneric} · ${t.agentReal}` : t.agentGeneric} — {t.subtitle}
-                </span>
+                {t.title}
+                {t.final && (
+                  <span className="rounded-full border border-warn/40 bg-warn/10 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-warn">
+                    final
+                  </span>
+                )}
               </button>
             );
           })}
@@ -102,41 +109,50 @@ export default function TokenInspector() {
             </div>
           ) : decoded ? (
             <div className="space-y-4">
-              <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
-                <div className="min-w-0 flex-1">
-                  <p className="mb-2 text-2xs font-semibold uppercase tracking-wider text-mute">Claims</p>
-                  <TokenBlock claims={decoded.payload} />
-                </div>
-                {decoded.payload["act"] != null && (
-                  <div className="shrink-0 lg:w-[320px]">
-                    <p className="mb-2 flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-mute">
-                      <span className="h-3 w-1 rounded-full bg-[#B79CFF]" /> Delegation chain <span className="tok-act">(act)</span>
-                    </p>
-                    <div className="rounded-lg border-2 p-3" style={{ borderColor: hexA("#B79CFF", 0.35), background: hexA("#B79CFF", 0.06) }}>
-                      <pre className="font-mono text-[11px] leading-relaxed text-ink [overflow-wrap:anywhere] whitespace-pre-wrap">
-                        {JSON.stringify(decoded.payload["act"], null, 2)}
-                      </pre>
-                    </div>
+              <div>
+                <p className="mb-2 text-2xs font-semibold uppercase tracking-wider text-mute">Decoded</p>
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
+                  <div className="min-w-0 flex-1">
+                    <TokenBlock claims={decoded.payload} />
                   </div>
-                )}
+                  {decoded.payload["act"] != null && (
+                    <div className="shrink-0 lg:w-[320px]">
+                      <p className="mb-2 flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-mute">
+                        <span className="h-3 w-1 rounded-full bg-[#B79CFF]" /> Delegation chain <span className="tok-act">(act)</span>
+                      </p>
+                      <div className="rounded-lg border-2 p-3" style={{ borderColor: hexA("#B79CFF", 0.35), background: hexA("#B79CFF", 0.06) }}>
+                        <pre className="font-mono text-[11px] leading-relaxed text-ink [overflow-wrap:anywhere] whitespace-pre-wrap">
+                          {JSON.stringify(decoded.payload["act"], null, 2)}
+                        </pre>
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
 
               <div>
-                <button type="button" onClick={() => setShowRaw((v) => !v)}
-                  className="inline-flex items-center gap-1.5 text-[13px] text-accent hover:opacity-80">
-                  <ChevronDown className={`h-3.5 w-3.5 transition-transform ${showRaw ? "rotate-180" : ""}`} />
-                  {showRaw ? "Hide raw token" : "Show raw token"}
-                </button>
-                {showRaw && (
-                  <div className="mt-2 rounded-lg border border-line bg-[#0B0E13] p-3">
-                    <p className="font-mono text-[11px] leading-relaxed text-ok [overflow-wrap:anywhere]">{rawToken}</p>
-                    <p className="mt-2.5 flex items-center gap-1.5 text-[11px] text-mute">
-                      <KeyRound className="h-3 w-3 shrink-0" />
-                      Independently verifiable, decode this yourself at jwt.io, or check the signature against
-                      Okta&apos;s public JWKS, without trusting anything this UI says about it.
-                    </p>
+                <div className="mb-2 flex items-center justify-between">
+                  <p className="text-2xs font-semibold uppercase tracking-wider text-mute">Encoded</p>
+                  <div className="flex items-center gap-2">
+                    <button type="button" onClick={() => copyRaw(rawToken)}
+                      className="inline-flex items-center gap-1.5 rounded-md border border-line px-2 py-1 text-2xs text-soft transition-colors hover:border-accent/60 hover:text-accent">
+                      {copied ? <Check className="h-3 w-3 text-ok" /> : <Copy className="h-3 w-3" />}
+                      {copied ? "Copied" : "Copy"}
+                    </button>
+                    <a href="https://jwt.io/" target="_blank" rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1.5 rounded-md border border-line px-2 py-1 text-2xs text-soft transition-colors hover:border-accent/60 hover:text-accent">
+                      Open jwt.io ↗
+                    </a>
                   </div>
-                )}
+                </div>
+                <div className="rounded-lg border border-line bg-[#0B0E13] p-3">
+                  <p className="font-mono text-[11px] leading-relaxed text-ok [overflow-wrap:anywhere]">{rawToken}</p>
+                </div>
+                <p className="mt-2 flex items-center gap-1.5 text-[11px] text-mute">
+                  <KeyRound className="h-3 w-3 shrink-0" />
+                  Copy it, open jwt.io, and paste it into the Encoded Token field yourself, or check the signature
+                  against Okta&apos;s public JWKS, without trusting anything this UI says about it.
+                </p>
               </div>
             </div>
           ) : (
