@@ -10,6 +10,8 @@
 import { useMemo, useState } from "react";
 import { Copy, Check, ShieldCheck, KeyRound } from "lucide-react";
 import TokenBlock from "@/components/TokenBlock";
+import DecodedCard from "@/components/DecodedCard";
+import SignatureVerification from "@/components/SignatureVerification";
 import { readCapturedRawTokens, type CapturedRawTokens } from "@/lib/events";
 import { TOKEN_TABS, decodeJwt, illustrativeRawTokens, illustrativeVaultData } from "@/lib/tokenInspector";
 
@@ -108,26 +110,25 @@ export default function TokenInspector() {
               This step wasn&apos;t reached in your last run.
             </div>
           ) : decoded ? (
-            <div className="space-y-4">
-              <div>
-                <p className="mb-2 text-2xs font-semibold uppercase tracking-wider text-mute">Decoded</p>
-                <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
-                  <div className="min-w-0 flex-1">
-                    <TokenBlock claims={decoded.payload} />
-                  </div>
-                  {decoded.payload["act"] != null && (
-                    <div className="shrink-0 lg:w-[320px]">
-                      <p className="mb-2 flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-mute">
-                        <span className="h-3 w-1 rounded-full bg-[#B79CFF]" /> Delegation chain <span className="tok-act">(act)</span>
-                      </p>
-                      <div className="rounded-lg border-2 p-3" style={{ borderColor: hexA("#B79CFF", 0.35), background: hexA("#B79CFF", 0.06) }}>
-                        <pre className="font-mono text-[11px] leading-relaxed text-ink [overflow-wrap:anywhere] whitespace-pre-wrap">
-                          {JSON.stringify(decoded.payload["act"], null, 2)}
-                        </pre>
-                      </div>
-                    </div>
-                  )}
+            <div className="space-y-5">
+              <DecodedCard title="Decoded Header" claims={decoded.header} jsonView={<TokenBlock claims={decoded.header} />} />
+
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
+                <div className="min-w-0 flex-1">
+                  <DecodedCard title="Decoded Payload" claims={decoded.payload} jsonView={<TokenBlock claims={decoded.payload} />} />
                 </div>
+                {decoded.payload["act"] != null && (
+                  <div className="shrink-0 lg:w-[300px]">
+                    <p className="mb-2 flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-mute">
+                      <span className="h-3 w-1 rounded-full bg-[#B79CFF]" /> Delegation chain <span className="tok-act">(act)</span>
+                    </p>
+                    <div className="rounded-lg border-2 p-3" style={{ borderColor: hexA("#B79CFF", 0.35), background: hexA("#B79CFF", 0.06) }}>
+                      <pre className="font-mono text-[11px] leading-relaxed text-ink [overflow-wrap:anywhere] whitespace-pre-wrap">
+                        {JSON.stringify(decoded.payload["act"], null, 2)}
+                      </pre>
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div>
@@ -154,6 +155,8 @@ export default function TokenInspector() {
                   against Okta&apos;s public JWKS, without trusting anything this UI says about it.
                 </p>
               </div>
+
+              {rawToken && <SignatureVerification rawToken={rawToken} />}
             </div>
           ) : (
             <p className="py-10 text-center text-[13px] text-bad">Unable to decode this token.</p>
@@ -198,11 +201,11 @@ function VaultTab({ data, notReached, isReal }: { data: Record<string, unknown> 
         </div>
       </div>
       <div className="rounded-lg border border-line bg-raised/40 p-3 text-[12px] leading-relaxed text-soft">
-        <span className="font-semibold text-ink">Why {subjectRef === "t_res" ? "the hop-1 token, not the hop-2 one" : "this specific subject"}:</span>{" "}
-        verified live against a real Okta tenant: presenting Agent 3&apos;s <em>own</em> inbound A2A token (tab 3,
-        the one that authorized invoking it) succeeds, presenting the token it mints downstream (tab 5), or the
-        raw service-client bootstrap token (tab 1), is rejected with a delegation-policy error. Full write-up in
-        the architecture doc linked above.
+        <span className="font-semibold text-ink">Why {subjectRef === "t_res" ? "the token Agent 2 handed it, not the one it minted" : "this specific subject"}:</span>{" "}
+        verified live against a real Okta tenant: presenting Agent 3&apos;s <em>own</em> inbound A2A token (the
+        &quot;Agent 2&quot; tab, the one that authorized invoking it) succeeds, presenting the token it mints
+        downstream (the &quot;Agent 3&quot; tab), or the raw service-client bootstrap token (&quot;Bootstrap&quot;),
+        is rejected with a delegation-policy error. Full write-up in the architecture doc linked above.
       </div>
       {!isReal && (
         <p className="text-2xs text-mute">Illustrative example — simulate a ticket to see your own run&apos;s real exchange.</p>
