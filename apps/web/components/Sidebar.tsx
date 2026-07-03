@@ -2,13 +2,13 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Inbox, BookOpen, Bot, ShieldCheck, Network } from "lucide-react";
+import { Inbox, KeyRound, Bot, ShieldCheck, Network } from "lucide-react";
 import AtlasMark from "@/components/AtlasMark";
 
 const NAV = [
   { href: "/", label: "Service Desk", icon: Inbox },
   { href: "/agents", label: "Agents", icon: Bot },
-  { href: "/how-it-works", label: "How it works", icon: BookOpen },
+  { href: "/tokens", label: "Token Inspector", icon: KeyRound },
   { href: "/architecture", label: "Architecture", icon: Network },
 ];
 

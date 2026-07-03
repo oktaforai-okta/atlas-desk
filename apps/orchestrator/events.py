@@ -1,7 +1,7 @@
 """Activity event model + SSE emitter (matches the frontend ActivityEvent contract).
 
 JSON keys must match apps/web/lib/events.ts: step, actor, actorKind, plain, tech,
-primary, token_claims, system_log_id, data, status, ts.
+primary, token_claims, raw_tokens, system_log_id, data, status, ts.
 """
 from __future__ import annotations
 
@@ -24,6 +24,7 @@ class ActivityEvent:
     tech: Optional[str] = None
     primary: bool = False
     token_claims: Optional[dict] = None
+    raw_tokens: Optional[dict] = None  # {label: compact JWT}, e.g. {"t1": "...", "idjag1": "...", "t_res": "..."}
     system_log_id: Optional[str] = None
     data: dict = field(default_factory=dict)
     status: str = STATUS_OK
@@ -38,6 +39,7 @@ class ActivityEvent:
             "tech": self.tech,
             "primary": self.primary,
             "token_claims": self.token_claims,
+            "raw_tokens": self.raw_tokens,
             "system_log_id": self.system_log_id,
             "data": self.data,
             "status": self.status,

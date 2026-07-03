@@ -23,6 +23,7 @@ type IconName = "inbox" | "server" | "bot" | "lock" | "kanban";
 interface FNode {
   id: string; label: string; icon: IconName; type: NType; color: string;
   role: string; idKind?: string; idVal?: string; // role shown in-card; real id (WLP/APP) revealed OUTSIDE on hover/replay
+  realName?: string; // for AI agents: the real name (Triage/Resolution/Fulfillment), revealed alongside the id
   tx: number; ty: number; x: number; y: number; fx?: number | null; fy?: number | null;
 }
 interface FLink { source: string | FNode; target: string | FNode; brokered?: boolean; kind?: "branch" }
@@ -35,16 +36,23 @@ const colorKey = (hex: string) => Object.keys(C).find((k) => C[k] === hex) ?? "e
 
 // A left-to-right delegation pipeline; the vault hangs directly BELOW Fulfillment
 // (the only agent trusted to pull the prod credential) as a governance side-branch.
-// No Okta/owner nodes, Okta lives on the id-jag edges. Cards stay clean (name +
-// role); each identity node's REAL Okta id (WLP ID for agents, APP ID for the
-// service client) is revealed OUTSIDE the card on hover, or as the replay dot
-// passes. Every id here is a live principal in the deployed tenant.
+// No Okta/owner nodes, Okta lives on the id-jag edges. Cards stay clean (generic
+// "Agent N" + role, on purpose, see below); each identity node's REAL Okta id
+// (WLP ID for agents, APP ID for the service client) is revealed OUTSIDE the card
+// on hover, or as the replay dot passes. Every id here is a live principal in the
+// deployed tenant.
+//
+// Agent nodes show a generic "Agent 1/2/3" statically, the real name (Triage/
+// Resolution/Fulfillment) only appears paired with the workload principal id in
+// the reveal, so learning who really did what requires actually looking at the
+// verifiable identity, not just reading a label. The Intake Service is a service
+// client, not an "Agent N" — its label was already generic-safe, untouched.
 const RAW_NODES: Omit<FNode, "x" | "y">[] = [
   { id: "inbound", label: "Inbound Tickets", role: "external system", icon: "inbox", type: "external", color: C.external, tx: 150, ty: 180 },
   { id: "svc", label: "Intake Service", role: "service client", idKind: "APP ID", idVal: "0oaEXAMPLEIntakeSvc1", icon: "server", type: "service", color: C.service, tx: 410, ty: 180 },
-  { id: "triage", label: "Triage", role: "AI Agent", idKind: "WLP ID", idVal: "wlpEXAMPLETriageAgt1", icon: "bot", type: "agent", color: C.triage, tx: 670, ty: 180 },
-  { id: "resolve", label: "Resolution", role: "AI Agent", idKind: "WLP ID", idVal: "wlpEXAMPLEResolveAg1", icon: "bot", type: "agent", color: C.resolve, tx: 930, ty: 180 },
-  { id: "fulfill", label: "Fulfillment", role: "AI Agent", idKind: "WLP ID", idVal: "wlpEXAMPLEFulfillAg1", icon: "bot", type: "agent", color: C.fulfill, tx: 1190, ty: 180 },
+  { id: "triage", label: "Agent 1", role: "AI Agent", realName: "Triage", idVal: "wlpEXAMPLETriageAgt1", icon: "bot", type: "agent", color: C.triage, tx: 670, ty: 180 },
+  { id: "resolve", label: "Agent 2", role: "AI Agent", realName: "Resolution", idVal: "wlpEXAMPLEResolveAg1", icon: "bot", type: "agent", color: C.resolve, tx: 930, ty: 180 },
+  { id: "fulfill", label: "Agent 3", role: "AI Agent", realName: "Fulfillment", idVal: "wlpEXAMPLEFulfillAg1", icon: "bot", type: "agent", color: C.fulfill, tx: 1190, ty: 180 },
   { id: "jira", label: "Jira · ITSD", role: "IT Service Desk", icon: "kanban", type: "external", color: C.external, tx: 1450, ty: 180 },
   { id: "vault", label: "OPA Vault", role: "vaulted secret", icon: "lock", type: "resource", color: C.resource, tx: 1190, ty: 445 },
 ];
@@ -296,19 +304,25 @@ export default function AtlasFabric() {
             );
           })}
           {/* the REAL Okta id, revealed OUTSIDE the card — floats in above it and lights
-              up on hover, or as the replay dot passes the node (never crammed in the box) */}
+              up on hover, or as the replay dot passes the node (never crammed in the box).
+              For agent nodes, the real name (Triage/Resolution/Fulfillment) reveals here
+              too, paired with the id, that pairing is the whole point: the static card
+              only ever says "Agent N," learning who it really is means looking at the id. */}
           {nodes.filter((n) => n.idVal).map((n) => {
             const active = hovered === n.id || passingId === n.id;
-            const pillW = 208, top = n.y - NH / 2 - 34, left = n.x - pillW / 2;
+            const pillW = n.realName ? 226 : 208, top = n.y - NH / 2 - 34, left = n.x - pillW / 2;
+            const labelText = n.realName ?? n.idKind;
+            const idX = left + (n.realName ? 68 : 56);
             return (
               <g key={`id-${n.id}`} className="pointer-events-none"
                 style={{ opacity: active ? 1 : 0, transition: "opacity 0.45s ease" }}>
                 <rect x={left} y={top} width={pillW} height={24} rx={12} fill="#0B0E13"
                   stroke={n.color} strokeOpacity={0.7}
                   style={{ filter: active ? `drop-shadow(0 0 8px ${n.color}66)` : undefined }} />
-                <text x={left + 14} y={top + 13} fontSize={8.5} fontWeight={600} fill="#6B7688"
-                  dominantBaseline="middle" style={{ letterSpacing: "0.08em" }}>{n.idKind}</text>
-                <text x={left + 56} y={top + 13} fontSize={10} fill={n.color}
+                <text x={left + 14} y={top + 13} fontSize={n.realName ? 10.5 : 8.5} fontWeight={n.realName ? 700 : 600}
+                  fill={n.realName ? "#E7ECF5" : "#6B7688"}
+                  dominantBaseline="middle" style={{ letterSpacing: n.realName ? "0.01em" : "0.08em" }}>{labelText}</text>
+                <text x={idX} y={top + 13} fontSize={10} fill={n.color}
                   dominantBaseline="middle" style={{ fontFamily: "var(--font-mono)", letterSpacing: "-0.02em" }}>{n.idVal}</text>
               </g>
             );

@@ -2,20 +2,20 @@
 
 // The hero: a live, three-agent delegation flow.
 //
-//   Intake Service (service, bootstrap) -> Triage -> Resolution -> Fulfillment -> Jira
+//   Intake Service (service, bootstrap) -> Agent 1 -> Agent 2 -> Agent 3 -> Jira
 //
-// Both agent-to-agent hops (Triage->Resolution, Resolution->Fulfillment) are
-// brokered by Okta (id_jag), shown by the Okta node + its two connectors. The
-// SECOND hop's token nests BOTH agent workload principals in its act claim,
-// that's the chain-of-custody source below. Every pulse/particle fires only
-// off a real ActivityEvent status transition (verified against the Okta log).
+// Both agent-to-agent hops are brokered by Okta (id_jag), shown by the Okta
+// node + its two connectors. Every pulse/particle fires only off a real
+// ActivityEvent status transition (verified against the Okta log). Static
+// labels stay generic on purpose (Agent 1/2/3), hover a node to reveal its
+// real name alongside its workload principal id. Deep chain-of-custody /
+// raw-token inspection lives on a separate page (/tokens, the Token
+// Inspector), not duplicated here.
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
-import { Inbox, Bot, SquareKanban, ShieldCheck, KeyRound, ChevronDown } from "lucide-react";
+import { motion, useReducedMotion } from "framer-motion";
+import { Inbox, Bot, SquareKanban, ShieldCheck, KeyRound } from "lucide-react";
 import { linkHorizontal, linkVertical, type DefaultLinkObject } from "d3-shape";
-import TokenBlock from "@/components/TokenBlock";
-import ChainOfCustody from "@/components/ChainOfCustody";
 import { deriveAgentFlowState, type FlowStatus } from "@/lib/agentFlow";
 import { TRIAGE_COLOR, RESOLVE_COLOR, FULFILL_COLOR } from "@/lib/identities";
 import { latestByStep, type ActivityEvent } from "@/lib/events";
@@ -31,11 +31,14 @@ const LANE = 202;
 const NW = 158;
 const NH = 82;
 type NodeKey = "intake" | "triage" | "resolve" | "fulfill" | "jira" | "okta" | "vault";
-const NODES: Record<NodeKey, { cx: number; cy: number; w: number; h: number; color: string; name: string; kind: string; Icon: typeof Bot }> = {
+const NODES: Record<NodeKey, { cx: number; cy: number; w: number; h: number; color: string; name: string; realName?: string; kind: string; Icon: typeof Bot }> = {
   intake: { cx: 100, cy: LANE, w: NW, h: NH, color: NEUTRAL, name: "Intake", kind: "external system", Icon: Inbox },
-  triage: { cx: 350, cy: LANE, w: NW, h: NH, color: TRIAGE_COLOR, name: "Triage", kind: "AI Agent", Icon: Bot },
-  resolve: { cx: 600, cy: LANE, w: NW, h: NH, color: RESOLVE_COLOR, name: "Resolution", kind: "AI Agent", Icon: Bot },
-  fulfill: { cx: 850, cy: LANE, w: NW, h: NH, color: FULFILL_COLOR, name: "Fulfillment", kind: "AI Agent", Icon: Bot },
+  // Static labels stay generic ("Agent N"); the real name reveals only alongside
+  // the workload principal id on hover (see NODE_DETAIL below) — same rule as
+  // the architecture page's fabric diagram.
+  triage: { cx: 350, cy: LANE, w: NW, h: NH, color: TRIAGE_COLOR, name: "Agent 1", realName: "Triage", kind: "AI Agent", Icon: Bot },
+  resolve: { cx: 600, cy: LANE, w: NW, h: NH, color: RESOLVE_COLOR, name: "Agent 2", realName: "Resolution", kind: "AI Agent", Icon: Bot },
+  fulfill: { cx: 850, cy: LANE, w: NW, h: NH, color: FULFILL_COLOR, name: "Agent 3", realName: "Fulfillment", kind: "AI Agent", Icon: Bot },
   jira: { cx: 1100, cy: LANE, w: NW, h: NH, color: NEUTRAL, name: "Jira", kind: "IT Service Desk", Icon: SquareKanban },
   okta: { cx: 600, cy: 58, w: 192, h: 56, color: OKTA, name: "Okta", kind: "ID-JAG · both hops", Icon: ShieldCheck },
   vault: { cx: 850, cy: 302, w: 160, h: 52, color: VAULT, name: "OPA Vault", kind: "vaulted secret", Icon: KeyRound },
@@ -139,12 +142,14 @@ function OktaConnector({ d, to, active, flowing, reduced }: {
   );
 }
 
-// hover detail, the Okta id / mechanism revealed when you hover a node
+// hover detail, the Okta id / mechanism revealed when you hover a node. For the
+// three AI agents, the id and the real name reveal together, on purpose, the
+// static label above only ever says "Agent N."
 const NODE_DETAIL: Partial<Record<NodeKey, string>> = {
   intake: "external ticketing system",
-  triage: "wlpEXAMPLETriageAgt1",
-  resolve: "wlpEXAMPLEResolveAg1",
-  fulfill: "wlpEXAMPLEFulfillAg1",
+  triage: `wlpEXAMPLETriageAgt1 · ${NODES.triage.realName}`,
+  resolve: `wlpEXAMPLEResolveAg1 · ${NODES.resolve.realName}`,
+  fulfill: `wlpEXAMPLEFulfillAg1 · ${NODES.fulfill.realName}`,
   okta: "id-jag · agent.invoke",
   vault: "STS vaulted-secret",
   jira: "project ITSD",
@@ -218,12 +223,10 @@ function Grad({ id, from, to, x1, x2 }: { id: string; from: string; to: string; 
 export default function AgentFlowGraph({ events }: { events: ActivityEvent[] }) {
   const state = useMemo(() => deriveAgentFlowState(events), [events]);
   const reduced = useReducedMotion() ?? false;
-  const [showRaw, setShowRaw] = useState(false);
   const [hoverNode, setHoverNode] = useState<NodeKey | null>(null);
   const hop1 = state.edges.triageToResolve.status;
   const hop2 = state.edges.resolveToFulfillment.status;
   const oktaStatus = combine(hop1, hop2);
-  const claims = state.edges.resolveToFulfillment.claims; // the TWO-agent token
   const anyRunning = Object.values(state.nodes).some((s) => s === "running") || hop1 === "running" || hop2 === "running";
 
   const labels = useMemo(() => {
@@ -247,7 +250,7 @@ export default function AgentFlowGraph({ events }: { events: ActivityEvent[] }) 
   return (
     <div className={`card edge-accent hero-mesh overflow-hidden p-4 transition-shadow ${anyRunning ? "shadow-[0_0_0_1px_rgba(122,162,255,0.25),0_8px_40px_-12px_rgba(122,162,255,0.25)]" : ""}`}>
       <svg viewBox="0 0 1200 344" className="w-full" role="img"
-        aria-label="Three-agent delegation flow: Intake to Triage to Resolution to Fulfillment to Jira, with Okta brokering both agent-to-agent hops. Hover a node to reveal its Okta id.">
+        aria-label="Three-agent delegation flow: Intake to Agent 1 to Agent 2 to Agent 3 to Jira, with Okta brokering both agent-to-agent hops. Hover a node to reveal its Okta id and real name.">
         <defs>
           <Grad id="g-in" from={NEUTRAL} to={TRIAGE_COLOR} x1={N.intake.cx} x2={N.triage.cx} />
           <Grad id="g-h1" from={TRIAGE_COLOR} to={RESOLVE_COLOR} x1={N.triage.cx} x2={N.resolve.cx} />
@@ -272,30 +275,6 @@ export default function AgentFlowGraph({ events }: { events: ActivityEvent[] }) 
         <Node k="fulfill" status={state.nodes.fulfill} label={labels.fulfill} hover={hoverNode} setHover={setHoverNode} />
         <Node k="jira" status={state.nodes.jira} label={labels.jira} hover={hoverNode} setHover={setHoverNode} />
       </svg>
-
-      {claims && (
-        <div className="mt-2 border-t border-line pt-3.5">
-          <div className="mb-2.5 flex items-center gap-2 text-2xs uppercase tracking-wider text-mute">
-            <span className="h-1.5 w-1.5 rounded-full bg-ok live-dot" /> Chain of custody · every handoff signed by Okta
-          </div>
-          <ChainOfCustody claims={claims} systemLogId={state.edges.resolveToFulfillment.systemLogId} />
-          <button type="button" onClick={() => setShowRaw((v) => !v)}
-            className="mt-3 inline-flex items-center gap-1 text-[13px] text-accent hover:opacity-80">
-            <ChevronDown className={`h-3.5 w-3.5 transition-transform ${showRaw ? "rotate-180" : ""}`} />
-            {showRaw ? "Hide the raw token" : "For engineers · view the raw token"}
-          </button>
-          <AnimatePresence initial={false}>
-            {showRaw && (
-              <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }}
-                exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.2 }} className="overflow-hidden">
-                <div className="mt-2">
-                  <TokenBlock claims={claims} caption="final A2A token, issued by the Fulfillment A2A authorization server" />
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </div>
-      )}
 
       {state.errorMessage && <div className="mt-2 text-[13px] text-bad">{state.errorMessage}</div>}
     </div>

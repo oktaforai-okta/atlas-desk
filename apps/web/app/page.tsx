@@ -1,11 +1,12 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { Plus, ShieldCheck, User, CircleDot, Sparkles, Forward, MailCheck } from "lucide-react";
+import Link from "next/link";
+import { Plus, ShieldCheck, User, CircleDot, Sparkles, Forward, MailCheck, KeyRound } from "lucide-react";
 import AgentFlowGraph from "@/components/AgentFlowGraph";
 import TicketActivity from "@/components/TicketActivity";
 import {
-  runPipeline, nextTicket, captureTokenClaims, SEED_QUEUE, ORCH,
+  runPipeline, nextTicket, captureTokenClaims, captureRawTokens, SEED_QUEUE, ORCH,
   type ActivityEvent, type Ticket,
 } from "@/lib/events";
 
@@ -43,10 +44,16 @@ export default function ServiceDesk() {
     setEvents([]);
     setRunning(true);
     setQueue((q) => q.map((x) => (x.id === t.id ? { ...x, status: "working" } : x)));
+    // Kept alongside React state (which is a stale closure inside this async
+    // function by the time the stream closes) so captureRawTokens sees every
+    // event from this run, not just whatever `events` last was on render.
+    const collected: ActivityEvent[] = [];
     const res = await runPipeline(t, (e) => {
+      collected.push(e);
       setEvents((prev) => [...prev, e]);
       captureTokenClaims(e);
     }, ac.signal);
+    captureRawTokens(collected); // bridges this run's raw JWTs over to /tokens
     setQueue((q) =>
       q.map((x) =>
         x.id === t.id
@@ -181,7 +188,7 @@ export default function ServiceDesk() {
               {selected.outcome === "auto_resolved" && (
                 <div className="mt-5 max-w-3xl rounded-xl border border-ok/30 bg-ok/[0.06] p-4">
                   <div className="flex items-center gap-2 text-[15px] font-semibold text-ok">
-                    <Sparkles className="h-4 w-4" /> Auto-resolved by the Resolution agent
+                    <Sparkles className="h-4 w-4" /> Auto-resolved by Agent 2
                   </div>
                   <div className="mt-1 text-[13px] text-mute">
                     The agent judged this case self-serviceable, replied to the customer with the fix, and closed it in Jira. No human needed.
@@ -236,6 +243,13 @@ export default function ServiceDesk() {
                 </span>
               </div>
               <AgentFlowGraph events={events.length && selectedId === selected.id ? events : []} />
+
+              {selected.outcome && (
+                <Link href="/tokens"
+                  className="mt-3 inline-flex items-center gap-1.5 rounded-md border border-line px-3 py-1.5 text-[13px] text-accent transition-colors hover:border-accent/60 hover:bg-accent/5">
+                  <KeyRound className="h-3.5 w-3.5" /> Inspect the tokens from this run →
+                </Link>
+              )}
 
               <div className="mt-6 mb-3 flex max-w-3xl items-center gap-2">
                 <span className="text-2xs uppercase tracking-wider text-mute">Activity</span>

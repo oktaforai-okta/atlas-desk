@@ -14,6 +14,7 @@ export interface ActivityEvent {
   tech?: string;          // deep-dive detail
   primary?: boolean;      // surfaced on the main feed
   token_claims?: Record<string, unknown> | null;
+  raw_tokens?: Record<string, string> | null; // {label: compact JWT}, e.g. {"t1": "...", "t_res": "..."}
   system_log_id?: string | null;
   data?: Record<string, unknown>;
   status?: Status;
@@ -26,6 +27,14 @@ export function latestByStep(events: ActivityEvent[]): Map<string, ActivityEvent
   const latest = new Map<string, ActivityEvent>();
   for (const e of events) latest.set(e.step, e);
   return latest;
+}
+
+// Merges raw_tokens across the whole stream (first-appearance order), the flat
+// {label: rawJwt} map the Token Inspector reads. Additive only.
+export function collectRawTokens(events: ActivityEvent[]): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const e of events) if (e.raw_tokens) Object.assign(out, e.raw_tokens);
+  return out;
 }
 
 export interface Ticket {
@@ -57,6 +66,44 @@ export function captureTokenClaims(e: ActivityEvent) {
     window.sessionStorage.setItem(TOKEN_CLAIMS_KEY, JSON.stringify(store));
   } catch {
     // sessionStorage unavailable (private mode, etc.), the static example still renders
+  }
+}
+
+// Bridges a full run's raw JWTs + vault exchange metadata over to /tokens, a
+// separate page (and loses component state on navigation) — parallel to
+// TOKEN_CLAIMS_KEY above, not a replacement (AgentStatusBadge on /agents still
+// reads that one). Written once a run completes; the Token Inspector falls
+// back to clearly-labeled illustrative examples when this key is absent.
+export const RAW_TOKENS_KEY = "atlas:rawTokens";
+
+export interface CapturedRawTokens {
+  tokens: Record<string, string>;
+  vault: Record<string, unknown> | null;
+  capturedAt: number;
+}
+
+export function captureRawTokens(events: ActivityEvent[]) {
+  if (typeof window === "undefined") return;
+  const tokens = collectRawTokens(events);
+  if (Object.keys(tokens).length === 0) return;
+  try {
+    const vault = latestByStep(events).get("opa_vault")?.data ?? null;
+    const payload: CapturedRawTokens = { tokens, vault, capturedAt: Date.now() };
+    window.sessionStorage.setItem(RAW_TOKENS_KEY, JSON.stringify(payload));
+  } catch {
+    // sessionStorage unavailable, the Token Inspector falls back to illustrative examples
+  }
+}
+
+export function readCapturedRawTokens(): CapturedRawTokens | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.sessionStorage.getItem(RAW_TOKENS_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as CapturedRawTokens;
+    return parsed?.tokens ? parsed : null;
+  } catch {
+    return null;
   }
 }
 
@@ -176,7 +223,7 @@ function sequence(t: Ticket): ActivityEvent[] {
       data: { department: team } },
     // Hop 1: Triage → Resolution (one agent in the act chain)
     { step: "a2a_exchange", actor: "Triage → Resolution", actorKind: "triage", primary: true,
-      plain: "Handed off to Resolution",
+      plain: "Handed off to Agent 2",
       tech: "Intake Service bootstraps (client_credentials); Triage exchanges that for an id-jag and invokes Resolution, agent → agent.",
       token_claims: {
         sub: "0oaEXAMPLEIntakeSvc1",
@@ -190,7 +237,7 @@ function sequence(t: Ticket): ActivityEvent[] {
       tech: "Claude drafts the resolution. Resolution has no prod credential, it delegates execution to Fulfillment." },
     // Hop 2: Resolution → Fulfillment (TWO agents in the act chain)
     { step: "a2a_fulfillment", actor: "Resolution → Fulfillment", actorKind: "fulfill", primary: true,
-      plain: "Delegated execution to Fulfillment",
+      plain: "Delegated execution to Agent 3",
       tech: "Resolution invokes Fulfillment. The token's act claim now nests BOTH agents, Resolution ← Triage ← Intake Service.",
       token_claims: {
         sub: "0oaEXAMPLEIntakeSvc1",

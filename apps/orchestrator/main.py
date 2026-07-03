@@ -13,6 +13,7 @@ Run: ./.venv/bin/python -m uvicorn main:app --port 8080  (from apps/orchestrator
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 import os
 import random
@@ -84,6 +85,20 @@ def _extract_vaulted_secret(vault: dict) -> str:
         return (m.get("apikey") or m.get("token") or m.get("password")
                 or next((v for v in m.values() if v), "") or "")
     return ""
+
+
+def _fake_jwt(payload: dict) -> str:
+    """Unsigned, syntactically-real JWT for demo mode (no Okta creds configured).
+
+    alg=none is the actual RFC 7515 vocabulary for an unsecured JWS, not an
+    invented hack, this is a real header/payload, correctly encoded, with a
+    loud, non-cryptographic third segment so nobody could mistake it for a
+    live Okta-issued token. Two independent "this isn't real" tells: one for
+    anyone who reads JWT internals, one for anyone who just glances at it.
+    """
+    def b64(d: dict) -> str:
+        return base64.urlsafe_b64encode(json.dumps(d).encode()).rstrip(b"=").decode()
+    return f"{b64({'alg': 'none', 'typ': 'JWT'})}.{b64(payload)}.DEMO-UNSIGNED-NOT-A-REAL-OKTA-TOKEN"
 
 
 # Every case is assigned to a single shared Jira account (JIRA_ASSIGNEE_EMAIL)
@@ -189,11 +204,23 @@ async def _run_demo(stream: EventStream, seed: int, inbound: Optional[dict] = No
         t = generate_ticket(seed)
         dept = t.expected_department
     issue = f"ITSD-{120 + seed % 60}"
-    iss = f"https://{OKTA_DOMAIN}/oauth2/<resolution-cas-id>"
+    res_iss = f"https://{OKTA_DOMAIN}/oauth2/<resolution-cas-id>"
+    ful_iss = f"https://{OKTA_DOMAIN}/oauth2/<fulfillment-cas-id>"
     # NOTE: this demo path only runs when Okta creds are ABSENT (live_ready() is
-    # False). The token_claims below use illustrative placeholders ("wlp · Triage"),
-    # NOT real workload-principal ids, so nothing here can masquerade as a verified
-    # System Log entry. The live path (_run_live) emits the real, log-matching claims.
+    # False). token_claims/raw_tokens below use illustrative placeholders ("wlp ·
+    # Triage") and unsigned (alg=none) tokens, NOT real workload-principal ids or
+    # real Okta-issued JWTs, so nothing here can masquerade as a verified System
+    # Log entry. The live path (_run_live) emits the real, log-matching claims.
+    # Order matches the live path exactly: exchange -> draft -> fulfillment -> vault -> file.
+    res_claims = {"sub": "wlp · Triage",
+                  "act": {"sub": "wlp · Triage", "scope": "agent.invoke"},
+                  "aud": "https://atlas.acme.example/resolution",
+                  "scp": ["agent.invoke"], "iss": res_iss}
+    ful_claims = {"sub": "wlp · Resolution",
+                  "act": {"sub": "wlp · Resolution", "scope": "agent.invoke",
+                          "act": {"sub": "wlp · Triage", "scope": "agent.invoke"}},
+                  "aud": "https://atlas.acme.example/fulfillment",
+                  "scp": ["agent.invoke"], "iss": ful_iss}
     seq = [
         ActivityEvent("inbound", "Intake", "intake", "Received via intake API", primary=True,
                       tech=f"{t.id} ingested from the external ticketing system"),
@@ -204,22 +231,35 @@ async def _run_demo(stream: EventStream, seed: int, inbound: Optional[dict] = No
                       f"Classified as {dept} · routed to the {dept} team", primary=True,
                       tech="Claude classified the ticket and selected the destination team"),
         ActivityEvent("a2a_exchange", "Triage → Resolution", "triage",
-                      "Handed off to Resolution", primary=True,
+                      "Handed off to Agent 2", primary=True,
                       tech="Agent-to-agent delegation over Okta (machine context, scope agent.invoke).",
-                      token_claims={"sub": "wlp · Triage",
-                                    "act": {"sub": "wlp · Triage", "scope": "agent.invoke"},
-                                    "aud": "https://atlas.acme.example/resolution",
-                                    "scp": ["agent.invoke"], "iss": iss},
+                      token_claims=res_claims,
+                      raw_tokens={
+                          "t1": _fake_jwt({"sub": "svc · Intake Service", "aud": "https://atlas.acme.example/triage",
+                                           "scp": ["agent.invoke"], "iss": res_iss}),
+                          "idjag1": _fake_jwt({**res_claims, "requested_token_type": "id-jag"}),
+                          "t_res": _fake_jwt(res_claims),
+                      },
                       system_log_id="app.oauth2.token.grant.id_jag"),
-        ActivityEvent("opa_vault", "Resolution", "resolve", "Retrieved Jira credential securely",
-                      tech="Jira credential released from the Okta OPA vault at runtime (vaulted-secret)",
-                      token_claims={"resource": "orn:okta:opa:…:secrets:jira-atlas",
-                                    "requested_token_type": "vaulted-secret"},
-                      system_log_id="app.credential.vault.access"),
         ActivityEvent("devops_draft", "Resolution", "resolve",
                       "Drafted an acknowledgement and a first next step", primary=True,
                       tech="Claude drafted two work-note comments"),
-        ActivityEvent("jira_write", "Resolution", "resolve",
+        ActivityEvent("a2a_fulfillment", "Resolution → Fulfillment", "fulfill",
+                      "Delegated execution to Agent 3", primary=True,
+                      tech="Resolution invokes Fulfillment. The token's act claim now nests BOTH agents, "
+                           "Resolution ← Triage ← Intake Service, two workload principals in one credential.",
+                      token_claims=ful_claims,
+                      raw_tokens={
+                          "idjag2": _fake_jwt({**ful_claims, "requested_token_type": "id-jag"}),
+                          "t_ful": _fake_jwt(ful_claims),
+                      },
+                      system_log_id="app.oauth2.token.grant.id_jag"),
+        ActivityEvent("opa_vault", "Fulfillment", "fulfill", "Retrieved Jira credential securely",
+                      tech="Jira credential released from the Okta OPA vault at runtime (vaulted-secret)",
+                      data={"resource_orn": "orn:okta:opa:…:secrets:jira-atlas",
+                            "subject_token_ref": "t_res", "vaulted": True},
+                      system_log_id="app.credential.vault.access"),
+        ActivityEvent("jira_write", "Fulfillment", "fulfill",
                       f"Filed {issue} in Jira · {dept} · labeled · 2 comments", primary=True,
                       tech="POST /rest/api/3/issue", data={"issue_key": issue, "team": dept},
                       system_log_id="jira.issue.created"),
@@ -275,8 +315,8 @@ async def _run_live(stream: EventStream, seed: int, inbound: Optional[dict] = No
 
     # ---- Hop 1: Triage → Resolution (first agent-to-agent) ----
     await stream.emit(ActivityEvent("a2a_exchange", "Triage → Resolution", "triage",
-                      "Handed off to Resolution", status=STATUS_RUNNING, primary=True))
-    t_res, res_claims = None, {}
+                      "Handed off to Agent 2", status=STATUS_RUNNING, primary=True))
+    t1, idjag, t_res, res_claims = None, None, None, {}
     try:
         svc_id = os.environ["INTAKE_SERVICE_CLIENT_ID"]
         svc_secret = os.environ["INTAKE_SERVICE_SECRET"]
@@ -292,12 +332,14 @@ async def _run_live(stream: EventStream, seed: int, inbound: Optional[dict] = No
     except Exception:
         t_res, res_claims = None, {}
     real1 = "act" in res_claims
+    raw_tokens1 = ({k: v for k, v in {"t1": t1, "idjag1": idjag, "t_res": t_res}.items() if v} or None)
     await stream.emit(ActivityEvent("a2a_exchange", "Triage → Resolution", "triage",
-                      "Handed off to Resolution", status=STATUS_OK, primary=True,
+                      "Handed off to Agent 2", status=STATUS_OK, primary=True,
                       tech=("Intake Service bootstraps (client_credentials); Triage exchanges that for an id-jag "
                             "and invokes Resolution, agent → agent, scope agent.invoke." if real1
                             else "Delegation pending A2A resource registration (Console)"),
                       token_claims=({k: res_claims.get(k) for k in ("sub", "act", "aud", "scp", "iss") if k in res_claims} or None),
+                      raw_tokens=raw_tokens1,
                       system_log_id="app.oauth2.token.grant.id_jag" if real1 else None))
 
     # ---- Resolution decides: self-serviceable (auto-resolve) or route to a specialist? ----
@@ -314,8 +356,8 @@ async def _run_live(stream: EventStream, seed: int, inbound: Optional[dict] = No
 
     # ---- Hop 2: Resolution → Fulfillment (second agent-to-agent) ----
     await stream.emit(ActivityEvent("a2a_fulfillment", "Resolution → Fulfillment", "resolve",
-                      "Delegated execution to Fulfillment", status=STATUS_RUNNING, primary=True))
-    ful_claims: dict = {}
+                      "Delegated execution to Agent 3", status=STATUS_RUNNING, primary=True))
+    idjag2, t_ful, ful_claims = None, None, {}
     try:
         if t_res:
             idjag2 = exchange_for_id_jag(t_res, devops_id, devops_jwk, OKTA_DOMAIN, ful_cas_issuer, ful_resource,
@@ -328,12 +370,14 @@ async def _run_live(stream: EventStream, seed: int, inbound: Optional[dict] = No
     except Exception:
         ful_claims = {}
     real2 = "act" in ful_claims
+    raw_tokens2 = ({k: v for k, v in {"idjag2": idjag2, "t_ful": t_ful}.items() if v} or None)
     await stream.emit(ActivityEvent("a2a_fulfillment", "Resolution → Fulfillment", "fulfill",
-                      "Delegated execution to Fulfillment", status=STATUS_OK, primary=True,
+                      "Delegated execution to Agent 3", status=STATUS_OK, primary=True,
                       tech=("Resolution invokes Fulfillment. The token's act claim now nests BOTH agents, "
                             "Resolution ← Triage ← Intake Service, two workload principals in one credential." if real2
                             else "Fulfillment delegation pending (Console)"),
                       token_claims=({k: ful_claims.get(k) for k in ("sub", "act", "aud", "scp", "iss") if k in ful_claims} or None),
+                      raw_tokens=raw_tokens2,
                       system_log_id="app.oauth2.token.grant.id_jag" if real2 else None))
 
     # ---- Fulfillment: pull the OPA-vaulted credential + file to Jira (only agent trusted on prod) ----
@@ -360,6 +404,8 @@ async def _run_live(stream: EventStream, seed: int, inbound: Optional[dict] = No
                       "Retrieved Jira credential securely", status=STATUS_OK,
                       tech=("STS vaulted-secret exchange (Okta Privileged Access)" if vaulted
                             else "Credential from secure env (OPA vault connection pending)"),
+                      data={"resource_orn": orn, "subject_token_ref": "t_res" if t_res else None,
+                            "vaulted": vaulted},
                       system_log_id="app.credential.vault.access" if vaulted else None))
 
     await stream.emit(ActivityEvent("jira_write", "Fulfillment", "fulfill",
