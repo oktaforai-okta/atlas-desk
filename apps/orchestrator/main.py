@@ -62,6 +62,30 @@ def _jwk(env_name: str, wlp: str) -> Optional[dict]:
     return json.loads(f.read_text()) if f.exists() else None
 
 
+def _extract_vaulted_secret(vault: dict) -> str:
+    """Pull the usable credential out of a vaulted-secret release.
+
+    Okta returns the released material under ``vaulted_secret``. For an OPA "API Key"
+    template it may be a JSON key/value map ({"apikey": "...", "username": "", ...});
+    take apikey/token/password, else the first non-empty value. Also handles a plain
+    string. Falls back through the older ``access_token``/``secret`` field names.
+    """
+    raw = vault.get("vaulted_secret") or vault.get("access_token") or vault.get("secret") or ""
+    if isinstance(raw, dict):
+        m = raw
+    elif isinstance(raw, str) and raw.strip().startswith("{"):
+        try:
+            m = json.loads(raw)
+        except Exception:
+            return raw.strip()
+    else:
+        return raw.strip() if isinstance(raw, str) else ""
+    if isinstance(m, dict):
+        return (m.get("apikey") or m.get("token") or m.get("password")
+                or next((v for v in m.values() if v), "") or "")
+    return ""
+
+
 # Every case is assigned to a single shared Jira account (JIRA_ASSIGNEE_EMAIL,
 # default oktaforai@atko.email) so one login sees them all. Resolve once, cache,
 # and assign best-effort so a lookup hiccup never blocks issue creation.
@@ -212,7 +236,7 @@ async def _run_live(stream: EventStream, seed: int, inbound: Optional[dict] = No
     from jose import jwt as jose_jwt
     from llm.claude import classify, draft_comments, draft_resolution
     from okta.a2a_exchange import mint_service_token, exchange_for_id_jag, redeem_id_jag_for_a2a_token
-    from okta.opa_vault import retrieve_vaulted_secret
+    from okta.opa_vault import retrieve_vaulted_secret, SUBJECT_TYPE_ACCESS_TOKEN
     from jira.client import JiraClient
 
     t = (types.SimpleNamespace(id=inbound["id"], title=inbound["title"], body=inbound["body"])
@@ -317,10 +341,15 @@ async def _run_live(stream: EventStream, seed: int, inbound: Optional[dict] = No
     jira_token = ""
     orn = os.getenv("JIRA_SECRET_RESOURCE_ORN")
     vaulted = False
-    if orn:
+    # Autonomous A2A vault release: the Fulfillment agent presents its INBOUND A2A
+    # token (t_res, the delegated authority it was handed) as the machine subject.
+    # Okta runs a delegation-policy check on it and releases the secret, no human.
+    if orn and t_res:
         try:
-            vault = retrieve_vaulted_secret(devops_id, devops_jwk, OKTA_DOMAIN, orn)
-            jira_token = vault.get("access_token") or vault.get("secret") or ""
+            vault = retrieve_vaulted_secret(devops_id, devops_jwk, OKTA_DOMAIN, orn,
+                                            subject_token=t_res,
+                                            subject_token_type=SUBJECT_TYPE_ACCESS_TOKEN)
+            jira_token = _extract_vaulted_secret(vault)
             vaulted = bool(jira_token)
         except Exception:
             jira_token = ""
