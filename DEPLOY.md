@@ -1,42 +1,48 @@
-# Deploying Atlas Service Desk (live demo)
+# Deploying Atlas Service Desk
 
-Two managed services, both on the shared **oktaforai** accounts:
+Two managed services:
 
 | Piece | App | Host |
 |---|---|---|
-| Frontend (Next.js) | `apps/web` | **Vercel** (oktaforai account) |
-| Orchestrator (FastAPI) | `apps/orchestrator` | **Render** (project `prj-d7gh20a8qa3s73f6lheg`, Starter) |
+| Frontend (Next.js) | `apps/web` | **Vercel** |
+| Orchestrator (FastAPI) | `apps/orchestrator` | **Render** |
 
 The frontend calls the orchestrator over SSE. Wire them by setting the Render URL as the frontend's `NEXT_PUBLIC_ORCHESTRATOR_URL`.
 
-> Prereq: both accounts' GitHub connections must have access to `oktaforai-okta/atlas-desk` and this deploy branch. Grant the oktaforai Vercel + Render GitHub apps access to the repo if prompted.
+> Prereq: your Vercel and Render accounts' GitHub connections need access to this repo and the branch you're deploying.
 
 ---
 
 ## 1. Backend — Render (do this first; the frontend needs its URL)
 
-1. In the shared Render project **prj-d7gh20a8qa3s73f6lheg** → **New → Blueprint** (or Web Service), connect `oktaforai-okta/atlas-desk`, pick this deploy branch. Render reads `render.yaml` and proposes **atlas-orchestrator** (Starter, rootDir `apps/orchestrator`).
-2. Set the secret env vars (marked `sync:false` in `render.yaml`, so Render prompts for them). Values live in the local `.secrets/` on the demo machine:
+1. In your Render project → **New → Blueprint** (or Web Service), connect this repo, pick your branch. Render reads `render.yaml` and proposes **atlas-orchestrator** (Starter plan, rootDir `apps/orchestrator`).
+2. Set every `sync:false` env var (Render prompts for these; see [docs/OKTA_SETUP.md](docs/OKTA_SETUP.md) for what each one is and how to obtain it for your tenant):
 
-   | Env var | Where to get the value |
+   | Env var | What it is |
    |---|---|
-   | `INTAKE_SERVICE_CLIENT_ID` | `.secrets/.env` |
-   | `INTAKE_SERVICE_SECRET` | `.secrets/.env` |
-   | `INTAKE_PRIVATE_JWK` | paste the full JSON of `.secrets/wlp10qjmsgdQROgxE1d8.private.jwk.json` |
-   | `DEVOPS_PRIVATE_JWK` | paste the full JSON of `.secrets/wlp10qjml8mNlyBVK1d8.private.jwk.json` |
-   | `JIRA_BASE_URL` | `.secrets/.env` (e.g. `https://aisupportbuild.atlassian.net`) |
-   | `ATLASSIAN_EMAIL` | `.secrets/.env` |
-   | `ATLASSIAN_API_TOKEN` | `.secrets/.env` |
-   | `JIRA_SECRET_RESOURCE_ORN` | `.secrets/.env` (optional; falls back to `ATLASSIAN_API_TOKEN` if unset) |
-   | `ANTHROPIC_API_KEY` | `.secrets/.env` |
+   | `OKTA_DOMAIN` | Your Okta tenant domain |
+   | `INTAKE_AGENT_ID` | Triage's workload principal id |
+   | `INTAKE_SERVICE_CLIENT_ID` / `INTAKE_SERVICE_SECRET` | Your Intake Service `client_credentials` app |
+   | `INTAKE_PRIVATE_JWK` | Full JSON of Triage's private key |
+   | `DEVOPS_AGENT_ID` | The Resolution/Fulfillment workload principal id |
+   | `DEVOPS_PRIVATE_JWK` | Full JSON of that agent's private key |
+   | `TRIAGE_CAS_ID` / `TRIAGE_RESOURCE_URL` | Triage's Custom AS id and resource URL |
+   | `A2A_CAS_ISSUER` / `A2A_AUDIENCE` | Resolution's Custom AS issuer URL and resource URL |
+   | `FULFILLMENT_CAS_ISSUER` / `FULFILLMENT_RESOURCE` | Fulfillment's Custom AS issuer URL and resource URL |
+   | `JIRA_BASE_URL` | Your Jira Cloud site, e.g. `https://your-site.atlassian.net` |
+   | `ATLASSIAN_EMAIL` | The Jira account whose API token you're using |
+   | `ATLASSIAN_API_TOKEN` | That account's Jira API token |
+   | `JIRA_SECRET_RESOURCE_ORN` | Your vaulted secret's ORN (optional; falls back to `ATLASSIAN_API_TOKEN` if unset) |
+   | `JIRA_ASSIGNEE_EMAIL` | The shared account you want every case assigned to |
+   | `ANTHROPIC_API_KEY` | Your Claude API key |
 
-   Non-secret vars (`OKTA_DOMAIN`, agent IDs, `JIRA_ASSIGNEE_EMAIL`, `AUTO_RESOLVE_RATE`, etc.) are already baked into `render.yaml`.
-3. Deploy. When it's up, hit `https://<service>.onrender.com/healthz` — it should return `{"ok":true,"mode":"live"}` once the secrets are set (`"demo"` means a required secret is still missing).
+   Non-secret vars (`JIRA_PROJECT_KEY`, `AUTO_RESOLVE_RATE`, `A2A_SCOPE`, etc.) are already baked into `render.yaml`.
+3. Deploy. When it's up, hit `https://<service>.onrender.com/healthz`, it should return `{"ok":true,"mode":"live"}` once every required var is set (`"demo"` means one still is missing).
 4. Copy the service URL (e.g. `https://atlas-orchestrator-xxxx.onrender.com`).
 
-## 2. Frontend — Vercel (oktaforai account)
+## 2. Frontend — Vercel
 
-1. **Add New → Project**, import `oktaforai-okta/atlas-desk`, same branch.
+1. **Add New → Project**, import this repo, same branch.
 2. **Root Directory → `apps/web`** (Framework auto-detects as Next.js; build `next build`).
 3. Add an Environment Variable (Production + Preview):
    - `NEXT_PUBLIC_ORCHESTRATOR_URL` = the Render URL from step 1.4
@@ -45,14 +51,14 @@ The frontend calls the orchestrator over SSE. Wire them by setting the Render UR
 
 ## 3. Verify
 
-Open the Vercel URL → the header pill should read **Live** (green). Click **Simulate inbound ticket** a few times:
+Open the Vercel URL, the header pill should read **Live** (green). Click **Simulate inbound ticket** a few times:
 - some cases **auto-resolve** (green panel, customer reply, "closed in Jira"),
 - others **route** to a team (blue panel),
-- every case is assigned to **oktaforai@atko.email** — log into Jira as that account and you'll see them under "assigned to me", auto-resolved ones marked **Done**.
+- every case is assigned to whichever account you set as `JIRA_ASSIGNEE_EMAIL`, log in as that account and you'll see them under "assigned to me," auto-resolved ones marked **Done**.
 
 ## Notes
 
-- CORS on the orchestrator is currently `*`, so the Vercel origin works out of the box. To tighten later, restrict `allow_origins` in `apps/orchestrator/main.py` to the Vercel domain.
+- CORS on the orchestrator is currently `*`, so any frontend origin works out of the box. To tighten later, restrict `allow_origins` in `apps/orchestrator/main.py` to your actual frontend domain.
 - Render Starter is always-on (no cold starts). The health check is `/healthz`.
 - `AUTO_RESOLVE_RATE` (Render env, default `0.5`) tunes how often cases auto-resolve; set `1.0` or `0.0` to force one outcome for a scripted demo.
-- Secrets never leave the dashboards — `.secrets/`, `.env*` are git-ignored.
+- Secrets never leave the dashboards, `.secrets/`, `.env*` are git-ignored, and every tenant-specific value (not just the true secrets) is `sync:false` in `render.yaml`.

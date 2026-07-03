@@ -1,7 +1,14 @@
 # Render blueprint for the Atlas Service Desk orchestrator.
-# Deploys in demo mode immediately; flips to LIVE once the sync:false secrets are
-# set in the Render dashboard. Add this service inside the shared demo project
-# (prj-d7gh20a8qa3s73f6lheg), not a personal project.
+# Deploys in demo mode immediately; flips to LIVE once the sync:false values below
+# are set in the Render dashboard. Add this service to whichever Render project
+# you want to host it in.
+#
+# Every value below is sync:false (prompted in the dashboard, never committed) --
+# this includes tenant identifiers (Okta domain, agent ids, auth server issuer,
+# resource audience) that aren't secrets by themselves but are specific to one
+# Okta tenant, not secrets in the credential sense, but not something to bake into
+# a public template either. See docs/OKTA_SETUP.md for what each one is and how
+# to obtain it for your own tenant.
 services:
   - type: web
     name: atlas-orchestrator
@@ -12,25 +19,33 @@ services:
     startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /healthz
     envVars:
-      - key: OKTA_DOMAIN
-        value: oktaforai.oktapreview.com
       - key: JIRA_PROJECT_KEY
         value: ITSD
-      - key: JIRA_ASSIGNEE_EMAIL
-        value: oktaforai@atko.email     # every case is assigned to this shared account
       - key: AUTO_RESOLVE_RATE
         value: "0.5"                     # fraction of cases the agents auto-resolve
       - key: A2A_SCOPE
         value: agent.invoke
-      # ---- agent identities (workload principals) ----
+      # ---- tenant-specific (your Okta domain + agent identities) ----
+      - key: OKTA_DOMAIN
+        sync: false
       - key: INTAKE_AGENT_ID
-        value: wlp10qjmsgdQROgxE1d8
+        sync: false
       - key: DEVOPS_AGENT_ID
-        value: wlp10qjml8mNlyBVK1d8
+        sync: false
       - key: A2A_CAS_ISSUER
-        value: https://oktaforai.oktapreview.com/oauth2/aus10rq0j6dqzBIY51d8
+        sync: false
       - key: A2A_AUDIENCE
-        value: https://atlas.acme.example/resolution
+        sync: false
+      - key: TRIAGE_CAS_ID
+        sync: false
+      - key: TRIAGE_RESOURCE_URL
+        sync: false
+      - key: FULFILLMENT_CAS_ISSUER
+        sync: false
+      - key: FULFILLMENT_RESOURCE
+        sync: false
+      - key: JIRA_ASSIGNEE_EMAIL
+        sync: false
       # ---- secrets: set these in the Render dashboard (sync:false = never committed) ----
       # A2A chain bootstrap (client_credentials that mints the first token):
       - key: INTAKE_SERVICE_CLIENT_ID

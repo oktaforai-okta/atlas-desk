@@ -18,21 +18,21 @@ export const RESOLVE_COLOR = "#4ED492";
 export const FULFILL_COLOR = "#E0A34E";
 
 export const IDENTITIES: Record<string, Identity> = {
-  "0oa10s89mqikXzZo41d8": { id: "0oa10s89mqikXzZo41d8", name: "Intake Service", kind: "service client", color: SERVICE_COLOR, isWorkloadPrincipal: false },
-  "wlp10qjmsgdQROgxE1d8": { id: "wlp10qjmsgdQROgxE1d8", name: "Triage Agent", kind: "AI agent", color: TRIAGE_COLOR, isWorkloadPrincipal: true },
-  "wlp10qjml8mNlyBVK1d8": { id: "wlp10qjml8mNlyBVK1d8", name: "Resolution Agent", kind: "AI agent", color: RESOLVE_COLOR, isWorkloadPrincipal: true },
-  "wlp10tzrk45bDrCMK1d8": { id: "wlp10tzrk45bDrCMK1d8", name: "Fulfillment Agent", kind: "AI agent", color: FULFILL_COLOR, isWorkloadPrincipal: true },
+  "0oaEXAMPLEIntakeSvc1": { id: "0oaEXAMPLEIntakeSvc1", name: "Intake Service", kind: "service client", color: SERVICE_COLOR, isWorkloadPrincipal: false },
+  "wlpEXAMPLETriageAgt1": { id: "wlpEXAMPLETriageAgt1", name: "Triage Agent", kind: "AI agent", color: TRIAGE_COLOR, isWorkloadPrincipal: true },
+  "wlpEXAMPLEResolveAg1": { id: "wlpEXAMPLEResolveAg1", name: "Resolution Agent", kind: "AI agent", color: RESOLVE_COLOR, isWorkloadPrincipal: true },
+  "wlpEXAMPLEFulfillAg1": { id: "wlpEXAMPLEFulfillAg1", name: "Fulfillment Agent", kind: "AI agent", color: FULFILL_COLOR, isWorkloadPrincipal: true },
 };
 
 // Each agent's A2A custom authorization server → the identity it protects.
 // A real A2A token's `iss` is the target's CAS; `aud` is its resourceUrl.
 const ISSUER_AS_TO_IDENTITY: Record<string, string> = {
-  aus10rq0j6dqzBIY51d8: "wlp10qjml8mNlyBVK1d8",
-  aus10u0cl35sfAoaU1d8: "wlp10tzrk45bDrCMK1d8",
+  ausEXAMPLEResolveCA1: "wlpEXAMPLEResolveAg1",
+  ausEXAMPLEFulfillCA1: "wlpEXAMPLEFulfillAg1",
 };
 const AUD_TO_IDENTITY: Record<string, string> = {
-  "https://atlas.acme.example/resolution": "wlp10qjml8mNlyBVK1d8",
-  "https://atlas.acme.example/fulfillment": "wlp10tzrk45bDrCMK1d8",
+  "https://atlas.acme.example/resolution": "wlpEXAMPLEResolveAg1",
+  "https://atlas.acme.example/fulfillment": "wlpEXAMPLEFulfillAg1",
 };
 
 export function identityForId(id: string): Identity | null {

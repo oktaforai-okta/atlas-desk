@@ -1,4 +1,4 @@
-"""Wire the Atlas A2A flow in oktaforai, mirroring the proven ProGear A2A config.
+"""Wire the Atlas A2A flow for your own tenant.
 
 Creates (idempotent):
   - Atlas Resolution A2A Custom AS (audience = RESOURCE_URL), scope `agent.invoke`
@@ -8,7 +8,10 @@ Creates (idempotent):
 
 Prints A2A_CAS_ISSUER + A2A_AUDIENCE for the spike.
 
-Run: OKTA_SSWS_TOKEN=... ./.venv/bin/python scripts/okta_a2a.py
+Run (set these for your own tenant first, see docs/OKTA_SETUP.md):
+    OKTA_SSWS_TOKEN=... OKTA_DOMAIN=... ORG_ID=... \\
+    INTAKE_AGENT_ID=... DEVOPS_AGENT_ID=... \\
+    ./.venv/bin/python scripts/okta_a2a.py
 """
 from __future__ import annotations
 
@@ -17,10 +20,10 @@ import os
 import httpx
 
 TOKEN = os.environ["OKTA_SSWS_TOKEN"].strip()
-DOM = "https://oktaforai.oktapreview.com"
-ORG_ID = "00ounfmlb8nQg2PUH1d7"
-TRIAGE = "wlp10qjmsgdQROgxE1d8"      # Atlas Triage Agent (delegator)
-RESOLUTION = "wlp10qjml8mNlyBVK1d8"  # Atlas Resolution Agent (resource)
+DOM = f"https://{os.environ.get('OKTA_DOMAIN', 'your-org.oktapreview.com')}"
+ORG_ID = os.environ.get("ORG_ID", "<org-id>")
+TRIAGE = os.environ.get("INTAKE_AGENT_ID", "<intake-agent-id>")      # Atlas Triage Agent (delegator)
+RESOLUTION = os.environ.get("DEVOPS_AGENT_ID", "<devops-agent-id>")  # Atlas Resolution Agent (resource)
 RESOURCE_URL = "https://atlas.acme.example/resolution"
 SCOPE = "agent.invoke"
 

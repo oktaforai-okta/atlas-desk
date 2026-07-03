@@ -10,7 +10,7 @@
 
 **Testing philosophy:** External hops (Okta token exchanges, OPA retrieval, Jira writes, Bridge STS) are verified against the **real** tenant/services with observable output, never mocked into a false pass. Pure logic (ticket fabrication, claims/scope parsing, event shaping, classification prompt assembly) uses TDD.
 
-**Tenant facts (verified 2026-06-29):** oktaforai.oktapreview.com; A2A live (a2a-servers + delegation-links endpoints work; existing A2A resources present); SSWS admin token available; `DevOps Agent`/`Claude Code Agent` already exist (we create distinct `JCDevOpsAgent` + `JC IT Intake Agent`).
+**Tenant facts (verified 2026-06-29):** your-org.oktapreview.com; A2A live (a2a-servers + delegation-links endpoints work; existing A2A resources present); SSWS admin token available; `DevOps Agent`/`Claude Code Agent` already exist (we create distinct `JCDevOpsAgent` + `JC IT Intake Agent`).
 
 ---
 
@@ -70,7 +70,7 @@ pytest-asyncio==0.24.*
 ```
 - [ ] **Step 2:** Create `.env.example`:
 ```
-OKTA_DOMAIN=oktaforai.oktapreview.com
+OKTA_DOMAIN=your-org.oktapreview.com
 OKTA_SSWS_TOKEN=                 # admin API token (local scripts only; NOT in deployed env)
 INTAKE_AGENT_ID=                 # wlp... (filled by okta_setup.py)
 INTAKE_CLIENT_ID=
@@ -78,7 +78,7 @@ INTAKE_PRIVATE_JWK=              # JSON
 DEVOPS_AGENT_ID=                 # wlp...
 DEVOPS_CLIENT_ID=
 DEVOPS_PRIVATE_JWK=              # JSON
-A2A_CAS_ISSUER=                  # https://oktaforai.oktapreview.com/oauth2/aus...
+A2A_CAS_ISSUER=                  # https://your-org.oktapreview.com/oauth2/aus...
 A2A_AUDIENCE=                    # JCDevOpsAgent a2a-server resourceUrl
 A2A_SCOPE=ticket:file
 JIRA_SECRET_RESOURCE_ORN=        # OPA Secret connection ORN on JCDevOpsAgent
@@ -253,7 +253,7 @@ Expected: prints HTTP 200 and the decoded issued token containing an **`act` cla
 - [ ] MCP server (Streamable HTTP) exposing `list_my_issues` and `add_label`; expects an inbound Jira OAuth bearer (the Bridge-brokered token) and calls Jira REST with it; validates token audience/issuer. Verify locally with a token. Commit.
 
 ### Task 5.2: Atlassian OAuth 3LO app + Okta Application (STS) connection
-- [ ] (User provisions the 3LO app.) Configure the Okta Application (`STS_ACCESS_TOKEN`) connection brokering Atlassian (OIN Jira app or custom resource server); callback = `https://oktaforai.oktapreview.com/oauth2/v1/sts/callback`; scopes match the 3LO app. Reference recipe: o4aa `atlassian-sts`.
+- [ ] (User provisions the 3LO app.) Configure the Okta Application (`STS_ACCESS_TOKEN`) connection brokering Atlassian (OIN Jira app or custom resource server); callback = `https://your-org.oktapreview.com/oauth2/v1/sts/callback`; scopes match the 3LO app. Reference recipe: o4aa `atlassian-sts`.
 
 ### Task 5.3: Bridge wiring + Claude registration
 - [ ] Using the Bridge admin (token in `bridge.txt`), add the Jira MCP server as a resource, link the Application (STS) connection, register Claude as a client. `claude mcp add --transport http okta-gateway <bridge-url>`; `/mcp` authenticate.

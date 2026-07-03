@@ -59,12 +59,12 @@ export default function HowItWorks() {
               step="a2a_exchange"
               caption="hop-1 token, issued by the Atlas Resolution A2A authorization server"
               fallbackClaims={{
-                sub: "0oa10s89mqikXzZo41d8",
-                act: { sub: "wlp10qjmsgdQROgxE1d8", sub_profile: "ai_agent",
-                       act: { sub: "0oa10s89mqikXzZo41d8", sub_profile: "service" } },
+                sub: "0oaEXAMPLEIntakeSvc1",
+                act: { sub: "wlpEXAMPLETriageAgt1", sub_profile: "ai_agent",
+                       act: { sub: "0oaEXAMPLEIntakeSvc1", sub_profile: "service" } },
                 aud: "https://atlas.acme.example/resolution",
                 scp: ["agent.invoke"],
-                iss: "https://oktaforai.oktapreview.com/oauth2/aus10rq0j6dqzBIY51d8",
+                iss: "https://example.oktapreview.com/oauth2/ausEXAMPLEResolveCA1",
               }}
             />
           </div>
@@ -79,13 +79,13 @@ export default function HowItWorks() {
               step="a2a_fulfillment"
               caption="final A2A token, issued by the Atlas Fulfillment A2A authorization server"
               fallbackClaims={{
-                sub: "0oa10s89mqikXzZo41d8",
-                act: { sub: "wlp10qjml8mNlyBVK1d8", sub_profile: "ai_agent",
-                       act: { sub: "wlp10qjmsgdQROgxE1d8", sub_profile: "ai_agent",
-                              act: { sub: "0oa10s89mqikXzZo41d8", sub_profile: "service" } } },
+                sub: "0oaEXAMPLEIntakeSvc1",
+                act: { sub: "wlpEXAMPLEResolveAg1", sub_profile: "ai_agent",
+                       act: { sub: "wlpEXAMPLETriageAgt1", sub_profile: "ai_agent",
+                              act: { sub: "0oaEXAMPLEIntakeSvc1", sub_profile: "service" } } },
                 aud: "https://atlas.acme.example/fulfillment",
                 scp: ["agent.invoke"],
-                iss: "https://oktaforai.oktapreview.com/oauth2/aus10u0cl35sfAoaU1d8",
+                iss: "https://example.oktapreview.com/oauth2/ausEXAMPLEFulfillCA1",
               }}
             />
           </div>

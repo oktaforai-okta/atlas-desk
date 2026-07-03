@@ -50,7 +50,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-OKTA_DOMAIN = os.getenv("OKTA_DOMAIN", "oktaforai.oktapreview.com")
+OKTA_DOMAIN = os.getenv("OKTA_DOMAIN", "your-org.oktapreview.com")
 SECRETS = Path(__file__).resolve().parents[2] / ".secrets"
 
 
@@ -86,16 +86,16 @@ def _extract_vaulted_secret(vault: dict) -> str:
     return ""
 
 
-# Every case is assigned to a single shared Jira account (JIRA_ASSIGNEE_EMAIL,
-# default oktaforai@atko.email) so one login sees them all. Resolve once, cache,
-# and assign best-effort so a lookup hiccup never blocks issue creation.
+# Every case is assigned to a single shared Jira account (JIRA_ASSIGNEE_EMAIL)
+# so one login sees them all. Resolve once, cache, and assign best-effort so a
+# lookup hiccup never blocks issue creation.
 _ASSIGNEE_CACHE: dict = {}
 
 
 def _assign_to_demo_user(jira, issue_key: str):
     """Assign the issue to the shared demo account. Returns (email, status) where
     status is 'ok' when Jira accepted the assignment (HTTP 204)."""
-    email = os.getenv("JIRA_ASSIGNEE_EMAIL", "oktaforai@atko.email")
+    email = os.getenv("JIRA_ASSIGNEE_EMAIL", "")
     if not email:
         return "", "disabled"
     aid = _ASSIGNEE_CACHE.get(email)
@@ -189,7 +189,7 @@ async def _run_demo(stream: EventStream, seed: int, inbound: Optional[dict] = No
         t = generate_ticket(seed)
         dept = t.expected_department
     issue = f"ITSD-{120 + seed % 60}"
-    iss = f"https://{OKTA_DOMAIN}/oauth2/aus10rq0j6dqzBIY51d8"
+    iss = f"https://{OKTA_DOMAIN}/oauth2/<resolution-cas-id>"
     # NOTE: this demo path only runs when Okta creds are ABSENT (live_ready() is
     # False). The token_claims below use illustrative placeholders ("wlp · Triage"),
     # NOT real workload-principal ids, so nothing here can masquerade as a verified
@@ -269,8 +269,9 @@ async def _run_live(stream: EventStream, seed: int, inbound: Optional[dict] = No
                      tech=f"Claude → {dept} ({urgency})", data={"department": dept, "urgency": urgency}))
 
     # Fulfillment agent (the third hop), the only agent trusted to touch prod.
-    ful_cas_issuer = f"https://{OKTA_DOMAIN}/oauth2/aus10u0cl35sfAoaU1d8"
-    ful_resource = "https://atlas.acme.example/fulfillment"
+    # Set for your own tenant, see docs/OKTA_SETUP.md.
+    ful_cas_issuer = os.environ.get("FULFILLMENT_CAS_ISSUER", f"https://{OKTA_DOMAIN}/oauth2/<fulfillment-cas-id>")
+    ful_resource = os.environ.get("FULFILLMENT_RESOURCE", "https://atlas.acme.example/fulfillment")
 
     # ---- Hop 1: Triage → Resolution (first agent-to-agent) ----
     await stream.emit(ActivityEvent("a2a_exchange", "Triage → Resolution", "triage",

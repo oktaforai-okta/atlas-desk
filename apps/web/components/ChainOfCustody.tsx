@@ -22,10 +22,10 @@ interface Hop {
 
 // Plain-language "what this actor does", keyed by real principal id.
 const ROLE: Record<string, string> = {
-  "0oa10s89mqikXzZo41d8": "Bootstraps the workflow (OAuth service client)",
-  "wlp10qjmsgdQROgxE1d8": "Classifies and routes the ticket",
-  "wlp10qjml8mNlyBVK1d8": "Decides the fix and drafts the work notes",
-  "wlp10tzrk45bDrCMK1d8": "Files the issue in Jira (only agent trusted on prod)",
+  "0oaEXAMPLEIntakeSvc1": "Bootstraps the workflow (OAuth service client)",
+  "wlpEXAMPLETriageAgt1": "Classifies and routes the ticket",
+  "wlpEXAMPLEResolveAg1": "Decides the fix and drafts the work notes",
+  "wlpEXAMPLEFulfillAg1": "Files the issue in Jira (only agent trusted on prod)",
 };
 
 function actChain(claims: Record<string, unknown>): Array<{ id: string; agent: boolean }> {

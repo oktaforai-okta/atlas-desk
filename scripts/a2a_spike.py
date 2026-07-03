@@ -10,7 +10,7 @@ Run AFTER scripts/okta_a2a.py has created the CAS + a2a-server + delegation-link
 Required env: OKTA_DOMAIN, A2A_CAS_ISSUER, A2A_AUDIENCE, A2A_SCOPE (default ticket:file).
 
 Usage:
-    A2A_CAS_ISSUER=https://oktaforai.oktapreview.com/oauth2/aus... \
+    A2A_CAS_ISSUER=https://your-org.oktapreview.com/oauth2/<cas-id> \
     A2A_AUDIENCE=https://atlas-resolution.agents.acme.example \
     ./.venv/bin/python scripts/a2a_spike.py
 """
@@ -26,8 +26,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "apps" / "orchestra
 from jose import jwt  # noqa: E402
 from okta.a2a_exchange import get_agent_access_token, exchange_for_agent_resource  # noqa: E402
 
-OKTA_DOMAIN = os.environ.get("OKTA_DOMAIN", "oktaforai.oktapreview.com")
-TRIAGE_WLP = os.environ.get("INTAKE_AGENT_ID", "wlp10qjmsgdQROgxE1d8")
+OKTA_DOMAIN = os.environ.get("OKTA_DOMAIN", "your-org.oktapreview.com")
+TRIAGE_WLP = os.environ.get("INTAKE_AGENT_ID", "<intake-agent-id>")
 CAS_ISSUER = os.environ["A2A_CAS_ISSUER"].rstrip("/")
 AUDIENCE = os.environ["A2A_AUDIENCE"]
 SCOPE = os.environ.get("A2A_SCOPE", "ticket:file")

@@ -6,7 +6,7 @@ export const metadata = { title: "Agents · Atlas Service Desk" };
 const AGENTS = [
   {
     name: "Atlas Triage Agent",
-    wlp: "wlp10qjmsgdQROgxE1d8",
+    wlp: "wlpEXAMPLETriageAgt1",
     kind: "AI Agent · workload identity",
     color: "text-triage",
     ring: "ring-triage/30 bg-triage/10",
@@ -17,7 +17,7 @@ const AGENTS = [
   },
   {
     name: "Atlas Resolution Agent",
-    wlp: "wlp10qjml8mNlyBVK1d8",
+    wlp: "wlpEXAMPLEResolveAg1",
     kind: "AI Agent · workload identity + A2A resource",
     color: "text-resolve",
     ring: "ring-resolve/30 bg-resolve/10",
@@ -29,7 +29,7 @@ const AGENTS = [
   },
   {
     name: "Atlas Fulfillment Agent",
-    wlp: "wlp10tzrk45bDrCMK1d8",
+    wlp: "wlpEXAMPLEFulfillAg1",
     kind: "AI Agent · workload identity + A2A resource",
     color: "text-fulfill",
     ring: "ring-fulfill/30 bg-fulfill/10",
@@ -72,7 +72,7 @@ export default function AgentsPage() {
 
             <div className="mt-4 grid grid-cols-2 gap-x-6 gap-y-2 border-t border-line pt-3 text-[14px]">
               <Meta label="Identity (wlp)" value={a.wlp} mono />
-              <Meta label="Owner" value="johnathan.campos@okta.com" icon />
+              <Meta label="Owner" value="agent-owner@acme.example" icon />
               <Meta label="Credential" value="RSA JWK · active" mono />
               <Meta label="Status" value="Active" />
             </div>

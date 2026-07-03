@@ -47,7 +47,7 @@ External ticket (faked inbound API)
 
 ### Half 2, Interactive: STS brokered consent via the MCP Bridge, human present
 
-Plain **Claude Code**, connected through the existing `oktaforai-poc` MCP Bridge to a Jira MCP server. The user runs a routine ("tag all my open tickets `reviewed-2026`"). Claude triggers **STS brokered consent** (handled by the Bridge, Claude can't do the exchange itself); the user consents once; Claude acts **as the user**. The app shows a companion panel visualizing the STS flow plus the Okta System Log consent + brokered-token events.
+Plain **Claude Code**, connected through an existing MCP Bridge instance to a Jira MCP server. The user runs a routine ("tag all my open tickets `reviewed-2026`"). Claude triggers **STS brokered consent** (handled by the Bridge, Claude can't do the exchange itself); the user consents once; Claude acts **as the user**. The app shows a companion panel visualizing the STS flow plus the Okta System Log consent + brokered-token events.
 
 ### The payoff (dot-connector shown in the UI)
 
@@ -72,7 +72,7 @@ Plain **Claude Code**, connected through the existing `oktaforai-poc` MCP Bridge
 | **Orchestrator backend** | FastAPI (Python) | Render | Intake Agent + JCDevOpsAgent logic, Claude API calls, Okta A2A + OPA token exchanges, Jira REST writes, SSE/stream of pipeline events to the UI |
 | **Jira MCP server** | Python (MCP) | Render | Half 2 only: small MCP server (tools: `list_my_issues`, `add_label`) fronted by the Bridge; receives the STS-brokered Jira token and calls Jira |
 
-### 3.2 Okta objects (oktaforai tenant)
+### 3.2 Okta objects (deployed tenant)
 
 | Object | Type | For |
 |---|---|---|

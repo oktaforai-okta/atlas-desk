@@ -15,13 +15,14 @@ Chain: Intake Service Client -> Atlas Triage -> Atlas Resolution (the target).
           grant=jwt-bearer, assertion=id-jag, client_assertion signed by Triage
           => access_token carries nested `act`: { target <- Triage <- ServiceClient }
 
-Verified against the live oktaforai tenant 2026-07-01 (scripts/a2a_flow.py).
-Agents cannot use client_credentials (grant types = token-exchange + jwt-bearer
-only), that's why a service client mints T1, not the caller agent itself. The
-caller agent must ALSO be a registered A2A resource ("dual citizenship") so
-T1's audience is valid.
+Verified against a live tenant (scripts/a2a_flow.py). Agents cannot use
+client_credentials (grant types = token-exchange + jwt-bearer only), that's why
+a service client mints T1, not the caller agent itself. The caller agent must
+ALSO be a registered A2A resource ("dual citizenship") so T1's audience is valid.
 """
 from __future__ import annotations
+
+import os
 
 import httpx
 
@@ -34,11 +35,11 @@ SUBJECT_TYPE_ACCESS_TOKEN = "urn:ietf:params:oauth:token-type:access_token"
 REQUESTED_TYPE_ID_JAG = "urn:ietf:params:oauth:token-type:id-jag"
 CLIENT_ASSERTION_TYPE = "urn:ietf:params:oauth:client-assertion-type:jwt-bearer"
 
-# Atlas Triage's dual-citizenship registration (Okta Console, 2026-07-01).
-# resourceUrl cannot be changed without deleting + recreating the a2a-server,
-# so these are fixed constants rather than env vars.
-TRIAGE_CAS_ID = "aus10sd70du8BMzlL1d8"  # "Atlas Triage A2A"
-TRIAGE_RESOURCE_URL = "https://atlas.acme.example/triage"
+# Atlas Triage's dual-citizenship registration (Okta Console). resourceUrl
+# cannot be changed without deleting + recreating the a2a-server, so pick these
+# deliberately for your own tenant, see docs/OKTA_SETUP.md.
+TRIAGE_CAS_ID = os.environ.get("TRIAGE_CAS_ID", "<triage-cas-id>")
+TRIAGE_RESOURCE_URL = os.environ.get("TRIAGE_RESOURCE_URL", "https://atlas.acme.example/triage")
 
 
 def mint_service_token(

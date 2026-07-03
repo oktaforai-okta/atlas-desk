@@ -52,7 +52,7 @@ export default function Sidebar() {
           <ShieldCheck className="h-3.5 w-3.5 text-ok" />
           Secured by Okta
         </div>
-        <div className="mt-1 font-mono text-2xs text-mute/70">oktaforai.oktapreview.com</div>
+        <div className="mt-1 font-mono text-2xs text-mute/70">example.oktapreview.com</div>
       </div>
     </aside>
   );

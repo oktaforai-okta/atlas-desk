@@ -1,9 +1,11 @@
-"""Idempotent Okta foundation setup for the JC DevOps Desk demo.
+"""Idempotent Okta foundation setup for Atlas Service Desk.
 
 Phase 1 scope: ensure agents have an active JWK credential, an owner, and are ACTIVE.
 
-Run:
-    OKTA_SSWS_TOKEN=... ./.venv/bin/python scripts/okta_setup.py
+Run (set these for your own tenant first, see docs/OKTA_SETUP.md):
+    OKTA_SSWS_TOKEN=... OKTA_DOMAIN=... OWNER_USER_ID=... \\
+    INTAKE_AGENT_ID=... DEVOPS_AGENT_ID=... \\
+    ./.venv/bin/python scripts/okta_setup.py
 
 Writes private JWKs to .secrets/<agent>.private.jwk.json (gitignored).
 Reads/writes are logged with HTTP status. Safe to re-run.
@@ -21,14 +23,14 @@ from pathlib import Path
 import httpx
 from cryptography.hazmat.primitives.asymmetric import rsa
 
-OKTA_DOMAIN = os.environ.get("OKTA_DOMAIN", "oktaforai.oktapreview.com")
+OKTA_DOMAIN = os.environ.get("OKTA_DOMAIN", "your-org.oktapreview.com")
 TOKEN = os.environ["OKTA_SSWS_TOKEN"].strip()
-OWNER_USER_ID = os.environ.get("OWNER_USER_ID", "00uunh82q2VPDKAuY1d7")  # johnathan.campos@okta.com
+OWNER_USER_ID = os.environ.get("OWNER_USER_ID", "<owner-user-id>")
 BASE = f"https://{OKTA_DOMAIN}/workload-principals/api/v1/ai-agents"
 
 AGENTS = {
-    "JCDevOpsAgent": "wlp10qjml8mNlyBVK1d8",
-    "JC IT Intake Agent": "wlp10qjmsgdQROgxE1d8",
+    "Resolution/Fulfillment Agent": os.environ.get("DEVOPS_AGENT_ID", "<devops-agent-id>"),
+    "Intake/Triage Agent": os.environ.get("INTAKE_AGENT_ID", "<intake-agent-id>"),
 }
 
 SECRETS = Path(__file__).resolve().parents[1] / ".secrets"

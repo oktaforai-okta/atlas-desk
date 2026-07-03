@@ -7,7 +7,7 @@
 //   • drag any node (d3.pointer stays accurate under zoom); the sim reflows
 //   • hover a node to spotlight its connections + reveal its Okta id
 //   • "Replay delegation" sends a token down the real path: service → 3 agents → Jira
-// Every node/edge is a real object in the oktaforai tenant. Okta itself isn't a
+// Every node/edge is a real object in the deployed tenant. Okta itself isn't a
 // node, it's the issuer that brokers each agent→agent hop, shown as the id-jag
 // shield sitting on those edges (which is exactly where the token is minted).
 
@@ -38,13 +38,13 @@ const colorKey = (hex: string) => Object.keys(C).find((k) => C[k] === hex) ?? "e
 // No Okta/owner nodes, Okta lives on the id-jag edges. Cards stay clean (name +
 // role); each identity node's REAL Okta id (WLP ID for agents, APP ID for the
 // service client) is revealed OUTSIDE the card on hover, or as the replay dot
-// passes. Every id here is a live principal in the oktaforai tenant.
+// passes. Every id here is a live principal in the deployed tenant.
 const RAW_NODES: Omit<FNode, "x" | "y">[] = [
   { id: "inbound", label: "Inbound Tickets", role: "external system", icon: "inbox", type: "external", color: C.external, tx: 150, ty: 180 },
-  { id: "svc", label: "Intake Service", role: "service client", idKind: "APP ID", idVal: "0oa10s89mqikXzZo41d8", icon: "server", type: "service", color: C.service, tx: 410, ty: 180 },
-  { id: "triage", label: "Triage", role: "AI Agent", idKind: "WLP ID", idVal: "wlp10qjmsgdQROgxE1d8", icon: "bot", type: "agent", color: C.triage, tx: 670, ty: 180 },
-  { id: "resolve", label: "Resolution", role: "AI Agent", idKind: "WLP ID", idVal: "wlp10qjml8mNlyBVK1d8", icon: "bot", type: "agent", color: C.resolve, tx: 930, ty: 180 },
-  { id: "fulfill", label: "Fulfillment", role: "AI Agent", idKind: "WLP ID", idVal: "wlp10tzrk45bDrCMK1d8", icon: "bot", type: "agent", color: C.fulfill, tx: 1190, ty: 180 },
+  { id: "svc", label: "Intake Service", role: "service client", idKind: "APP ID", idVal: "0oaEXAMPLEIntakeSvc1", icon: "server", type: "service", color: C.service, tx: 410, ty: 180 },
+  { id: "triage", label: "Triage", role: "AI Agent", idKind: "WLP ID", idVal: "wlpEXAMPLETriageAgt1", icon: "bot", type: "agent", color: C.triage, tx: 670, ty: 180 },
+  { id: "resolve", label: "Resolution", role: "AI Agent", idKind: "WLP ID", idVal: "wlpEXAMPLEResolveAg1", icon: "bot", type: "agent", color: C.resolve, tx: 930, ty: 180 },
+  { id: "fulfill", label: "Fulfillment", role: "AI Agent", idKind: "WLP ID", idVal: "wlpEXAMPLEFulfillAg1", icon: "bot", type: "agent", color: C.fulfill, tx: 1190, ty: 180 },
   { id: "jira", label: "Jira · ITSD", role: "IT Service Desk", icon: "kanban", type: "external", color: C.external, tx: 1450, ty: 180 },
   { id: "vault", label: "OPA Vault", role: "vaulted secret", icon: "lock", type: "resource", color: C.resource, tx: 1190, ty: 445 },
 ];

@@ -1,0 +1,107 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mxfile host="drawio" version="26.0.0">
+  <diagram name="Pipeline Sequence" id="pipeline1">
+    <mxGraphModel dx="1400" dy="1600" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1300" pageHeight="1300" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="title" value="Ticket lifecycle &#183; 9 steps, autonomous, no human in the loop" style="text;html=1;align=left;verticalAlign=middle;fontColor=#00033E;fontSize=16;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="200" y="0" width="600" height="30" as="geometry" />
+        </mxCell>
+
+        <!-- Legend -->
+        <mxCell id="leg1sw" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#00033E;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry x="1010" y="4" width="18" height="18" as="geometry" />
+        </mxCell>
+        <mxCell id="leg1tx" value="Okta issues / verifies a token" style="text;html=1;align=left;verticalAlign=middle;fontColor=#5A5A5A;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="1036" y="0" width="240" height="26" as="geometry" />
+        </mxCell>
+        <mxCell id="leg2sw" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ECE8E4;strokeColor=#E0DAD2;" vertex="1" parent="1">
+          <mxGeometry x="1010" y="28" width="18" height="18" as="geometry" />
+        </mxCell>
+        <mxCell id="leg2tx" value="No Okta token movement" style="text;html=1;align=left;verticalAlign=middle;fontColor=#5A5A5A;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="1036" y="24" width="240" height="26" as="geometry" />
+        </mxCell>
+
+        <!-- Stage 1: inbound -->
+        <mxCell id="s1" value="1 &#183; inbound&#xa;&lt;font style=&quot;font-style:italic;font-size:11px;color:#5A5A5A;&quot;&gt;Intake Service (external ticketing system)&lt;/font&gt;&#xa;&lt;font style=&quot;font-size:12px;font-weight:normal;&quot;&gt;Ticket received via intake API. No Okta involvement yet.&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ECE8E4;strokeColor=#E0DAD2;fontColor=#00033E;fontSize=14;fontStyle=1;arcSize=8;align=left;spacingLeft=16;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="200" y="40" width="760" height="100" as="geometry" />
+        </mxCell>
+
+        <!-- Stage 2: intake_auth -->
+        <mxCell id="s2" value="2 &#183; intake_auth&#xa;&lt;font style=&quot;font-style:italic;font-size:11px;color:#c7d4ff;&quot;&gt;Atlas Triage&lt;/font&gt;&#xa;&lt;font style=&quot;font-size:12px;font-weight:normal;&quot;&gt;Triage authenticates to Okta with its own key (private_key_jwt).&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#00033E;strokeColor=#00033E;fontColor=#FFFFFF;fontSize=14;fontStyle=1;arcSize=8;align=left;spacingLeft=16;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="200" y="180" width="760" height="100" as="geometry" />
+        </mxCell>
+
+        <!-- Stage 3: intake_classify -->
+        <mxCell id="s3" value="3 &#183; intake_classify&#xa;&lt;font style=&quot;font-style:italic;font-size:11px;color:#5A5A5A;&quot;&gt;Atlas Triage&lt;/font&gt;&#xa;&lt;font style=&quot;font-size:12px;font-weight:normal;&quot;&gt;Claude classifies the ticket: department + urgency.&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ECE8E4;strokeColor=#E0DAD2;fontColor=#00033E;fontSize=14;fontStyle=1;arcSize=8;align=left;spacingLeft=16;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="200" y="320" width="760" height="100" as="geometry" />
+        </mxCell>
+
+        <!-- Stage 4: a2a_exchange (TOKEN) -->
+        <mxCell id="s4" value="4 &#183; a2a_exchange &#8212; hop 1&#xa;&lt;font style=&quot;font-style:italic;font-size:11px;color:#c7d4ff;&quot;&gt;Atlas Triage &#8594; Atlas Resolution&lt;/font&gt;&#xa;&lt;font style=&quot;font-size:12px;font-weight:normal;&quot;&gt;Intake Service bootstraps (client_credentials) &#8594; Triage exchanges for an id-jag &#8594; redeems it. Resolution is now authorized.&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#00033E;strokeColor=#0131FF;strokeWidth=2;fontColor=#FFFFFF;fontSize=14;fontStyle=1;arcSize=8;align=left;spacingLeft=16;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="200" y="460" width="760" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="b4" value="" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#0131FF;strokeColor=none;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=12;fontStyle=0;aspect=fixed;pointerEvents=1;shape=mxgraph.aws4.shield2;" vertex="1" parent="1">
+          <mxGeometry x="1010" y="485" width="50" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="b4tx" value="id-jag&#xa;act: {Triage}" style="text;html=1;align=left;verticalAlign=top;fontColor=#0131FF;fontSize=11;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="990" y="540" width="200" height="34" as="geometry" />
+        </mxCell>
+
+        <!-- Stage 5: devops_draft -->
+        <mxCell id="s5" value="5 &#183; devops_draft&#xa;&lt;font style=&quot;font-style:italic;font-size:11px;color:#5A5A5A;&quot;&gt;Atlas Resolution&lt;/font&gt;&#xa;&lt;font style=&quot;font-size:12px;font-weight:normal;&quot;&gt;Claude drafts the resolution / work notes. Resolution decides: self-serve, or route to a specialist.&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ECE8E4;strokeColor=#E0DAD2;fontColor=#00033E;fontSize=14;fontStyle=1;arcSize=8;align=left;spacingLeft=16;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="200" y="600" width="760" height="100" as="geometry" />
+        </mxCell>
+
+        <!-- Stage 6: a2a_fulfillment (TOKEN) -->
+        <mxCell id="s6" value="6 &#183; a2a_fulfillment &#8212; hop 2&#xa;&lt;font style=&quot;font-style:italic;font-size:11px;color:#c7d4ff;&quot;&gt;Atlas Resolution &#8594; Atlas Fulfillment&lt;/font&gt;&#xa;&lt;font style=&quot;font-size:12px;font-weight:normal;&quot;&gt;Resolution exchanges its token for an id-jag targeting Fulfillment &#8594; redeems it. The act claim now nests BOTH agents.&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#00033E;strokeColor=#0131FF;strokeWidth=2;fontColor=#FFFFFF;fontSize=14;fontStyle=1;arcSize=8;align=left;spacingLeft=16;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="200" y="740" width="760" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="b6" value="" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#0131FF;strokeColor=none;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=12;fontStyle=0;aspect=fixed;pointerEvents=1;shape=mxgraph.aws4.shield2;" vertex="1" parent="1">
+          <mxGeometry x="1010" y="765" width="50" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="b6tx" value="id-jag&#xa;act nests 2 agents" style="text;html=1;align=left;verticalAlign=top;fontColor=#0131FF;fontSize=11;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="990" y="820" width="200" height="34" as="geometry" />
+        </mxCell>
+
+        <!-- Stage 7: opa_vault (TOKEN, key finding) -->
+        <mxCell id="s7" value="7 &#183; opa_vault&#xa;&lt;font style=&quot;font-style:italic;font-size:11px;color:#c7d4ff;&quot;&gt;Atlas Fulfillment&lt;/font&gt;&#xa;&lt;font style=&quot;font-size:12px;font-weight:normal;&quot;&gt;Fulfillment presents its INBOUND A2A token as the subject &#8594; Okta Privileged Access releases the vaulted Jira credential. No human involved &#8212; a machine subject authorizes the release.&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#0131FF;strokeColor=#0131FF;strokeWidth=2;fontColor=#FFFFFF;fontSize=14;fontStyle=1;arcSize=8;align=left;spacingLeft=16;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="200" y="880" width="760" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="b7" value="" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#FFFFFF;strokeColor=none;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=12;fontStyle=0;aspect=fixed;pointerEvents=1;shape=mxgraph.aws4.shield2;" vertex="1" parent="1">
+          <mxGeometry x="1010" y="905" width="50" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="b7tx" value="vaulted secret&#xa;subject = agent&#39;s own&#xa;inbound token" style="text;html=1;align=left;verticalAlign=top;fontColor=#0131FF;fontSize=11;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="990" y="960" width="220" height="48" as="geometry" />
+        </mxCell>
+
+        <!-- Stage 8: jira_write -->
+        <mxCell id="s8" value="8 &#183; jira_write&#xa;&lt;font style=&quot;font-style:italic;font-size:11px;color:#5A5A5A;&quot;&gt;Atlas Fulfillment &#8594; Jira Cloud&lt;/font&gt;&#xa;&lt;font style=&quot;font-size:12px;font-weight:normal;&quot;&gt;Fulfillment uses the released credential to create or resolve the real Jira issue.&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ECE8E4;strokeColor=#E0DAD2;fontColor=#00033E;fontSize=14;fontStyle=1;arcSize=8;align=left;spacingLeft=16;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="200" y="1020" width="760" height="100" as="geometry" />
+        </mxCell>
+
+        <!-- Stage 9: done -->
+        <mxCell id="s9" value="9 &#183; done&#xa;&lt;font style=&quot;font-style:italic;font-size:11px;color:#c7d4ff;&quot;&gt;Atlas (system)&lt;/font&gt;&#xa;&lt;font style=&quot;font-size:12px;font-weight:normal;&quot;&gt;Case resolved: auto-resolved &amp; customer notified, or routed to a specialist team. Every hop above is in the Okta System Log.&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#00033E;strokeColor=#00033E;fontColor=#FFFFFF;fontSize=14;fontStyle=1;arcSize=8;align=left;spacingLeft=16;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="200" y="1160" width="760" height="100" as="geometry" />
+        </mxCell>
+
+        <!-- Connectors -->
+        <mxCell id="c12" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;strokeColor=#5A5A5A;" edge="1" parent="1" source="s1" target="s2"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="c23" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;strokeColor=#5A5A5A;" edge="1" parent="1" source="s2" target="s3"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="c34" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;strokeColor=#5A5A5A;" edge="1" parent="1" source="s3" target="s4"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="c45" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;strokeColor=#5A5A5A;" edge="1" parent="1" source="s4" target="s5"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="c56" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;strokeColor=#5A5A5A;" edge="1" parent="1" source="s5" target="s6"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="c67" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;strokeColor=#5A5A5A;" edge="1" parent="1" source="s6" target="s7"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="c78" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;strokeColor=#5A5A5A;" edge="1" parent="1" source="s7" target="s8"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="c89" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;strokeColor=#5A5A5A;" edge="1" parent="1" source="s8" target="s9"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+        <!-- badge connector lines -->
+        <mxCell id="bc4" style="edgeStyle=none;html=1;dashed=1;strokeColor=#0131FF;endArrow=none;startArrow=none;" edge="1" parent="1" source="s4" target="b4"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="bc6" style="edgeStyle=none;html=1;dashed=1;strokeColor=#0131FF;endArrow=none;startArrow=none;" edge="1" parent="1" source="s6" target="b6"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="bc7" style="edgeStyle=none;html=1;dashed=1;strokeColor=#0131FF;endArrow=none;startArrow=none;" edge="1" parent="1" source="s7" target="b7"><mxGeometry relative="1" as="geometry" /></mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

@@ -1,0 +1,4 @@
+# Local dev env files must never reach the production build.
+# (.env.local carries a localhost orchestrator URL + a Vercel OIDC token;
+#  production reads NEXT_PUBLIC_ORCHESTRATOR_URL from Vercel project env instead.)
+.env*.local

@@ -142,9 +142,9 @@ function OktaConnector({ d, to, active, flowing, reduced }: {
 // hover detail, the Okta id / mechanism revealed when you hover a node
 const NODE_DETAIL: Partial<Record<NodeKey, string>> = {
   intake: "external ticketing system",
-  triage: "wlp10qjmsgdQROgxE1d8",
-  resolve: "wlp10qjml8mNlyBVK1d8",
-  fulfill: "wlp10tzrk45bDrCMK1d8",
+  triage: "wlpEXAMPLETriageAgt1",
+  resolve: "wlpEXAMPLEResolveAg1",
+  fulfill: "wlpEXAMPLEFulfillAg1",
   okta: "id-jag · agent.invoke",
   vault: "STS vaulted-secret",
   jira: "project ITSD",

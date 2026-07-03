@@ -1,8 +1,7 @@
 """Machine-context A2A token exchange, the VERIFIED 3-step flow.
 
-Recipe confirmed byte-for-byte against Bala Ganaparthi's O4AA-A2A-TokenInspector
-reference repo (github.com/BalaGanaparthi/O4AA-A2A-TokenInspector) and his live
-working tenant (bala-secures-ai.oktapreview.com, ProGearSales -> ProGearInventory).
+Recipe confirmed byte-for-byte against a known-working reference implementation
+of the same A2A pattern in a separate live tenant.
 
 Chain we are proving:  Intake Service Client -> Atlas Triage -> Atlas Resolution
 
@@ -20,19 +19,22 @@ Chain we are proving:  Intake Service Client -> Atlas Triage -> Atlas Resolution
           client_assertion=JWT signed by Triage (aud=Resolution CAS /token)
           => access_token carries nested `act`: { Resolution -> Triage -> ServiceClient }
 
-BLOCKER (as of 2026-07-01): STEP 2 returns "'subject_token' is invalid" until
-Atlas Triage is registered as an A2A RESOURCE in the Okta Console (dual
-citizenship). It is Console-only (POST/PUT a2a-servers = 405). Atlas Resolution
-is already registered; Bala's caller ProGearSales is too. Once Triage is
-registered (URL https://atlas.acme.example/triage, protecting CAS = the Triage
-CAS below) and the Intake Service client is added as a Delegation/caller on
-Triage, this script should print a real A2A token with the act chain.
+BLOCKER (observed in an earlier tenant state): STEP 2 can return "'subject_token'
+is invalid" until Atlas Triage is registered as an A2A RESOURCE in the Okta
+Console (dual citizenship). Registering that resource may be Console-only
+(POST/PUT a2a-servers has been observed returning 405). Once Triage is
+registered (its own resourceUrl, protecting its own CAS) and the Intake Service
+client is added as a Delegation/caller on Triage, this script should print a
+real A2A token with the act chain.
 
-Run:  ./.venv/bin/python scripts/a2a_flow.py
+Run (set these for your own tenant first, see docs/OKTA_SETUP.md):
+    OKTA_DOMAIN=... RESOLUTION_CAS_ID=... TRIAGE_CAS_ID=... \\
+    ./.venv/bin/python scripts/a2a_flow.py
 """
 from __future__ import annotations
 
 import json
+import os
 import pathlib
 import time
 import uuid
@@ -47,15 +49,15 @@ ENV = dict(
     if l.strip() and not l.startswith("#") and "=" in l
 )
 
-DOM = "https://oktaforai.oktapreview.com"
-SVC = ENV["INTAKE_SERVICE_CLIENT_ID"]        # 0oa10s89mqikXzZo41d8
+DOM = f"https://{os.environ.get('OKTA_DOMAIN', 'your-org.oktapreview.com')}"
+SVC = ENV["INTAKE_SERVICE_CLIENT_ID"]
 SEC = ENV["INTAKE_SERVICE_SECRET"]
-TRI = ENV["INTAKE_AGENT_ID"]                 # wlp10qjmsgdQROgxE1d8  (Atlas Triage, caller)
-RES_CAS = "aus10rq0j6dqzBIY51d8"             # Atlas Resolution CAS (target)
+TRI = ENV["INTAKE_AGENT_ID"]                 # Atlas Triage, caller
+RES_CAS = os.environ.get("RESOLUTION_CAS_ID", "<resolution-cas-id>")  # Atlas Resolution CAS (target)
 RES_URL = "https://atlas.acme.example/resolution"
 
-# Caller-side CAS created via API 2026-06-30 (aud = triage-resource).
-TRIAGE_CAS = "aus10sd70du8BMzlL1d8"          # "Atlas Triage A2A"
+# Caller-side CAS, aud = triage-resource.
+TRIAGE_CAS = os.environ.get("TRIAGE_CAS_ID", "<triage-cas-id>")  # "Atlas Triage A2A"
 # After Triage is registered as an A2A resource in the Console, set this to the
 # resourceUrl you registered (recommended: https://atlas.acme.example/triage).
 TRIAGE_RESOURCE = "https://atlas.acme.example/triage"
