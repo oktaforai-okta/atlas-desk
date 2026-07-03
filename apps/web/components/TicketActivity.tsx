@@ -1,8 +1,6 @@
 "use client";
 
 import { motion, AnimatePresence } from "framer-motion";
-import { BookOpen } from "lucide-react";
-import Link from "next/link";
 import { latestByStep, type ActivityEvent } from "@/lib/events";
 
 const ACTOR_COLOR: Record<string, string> = {
@@ -10,6 +8,21 @@ const ACTOR_COLOR: Record<string, string> = {
   triage: "bg-triage",
   resolve: "bg-resolve",
   okta: "bg-accent",
+};
+
+// Generic, per-step display label — same rule as the flow diagrams: static
+// text stays "Agent N," the real name only ever reveals via the diagrams'
+// hover state or the Token Inspector, never here in the always-visible feed.
+const STEP_ACTOR_LABEL: Record<string, string> = {
+  inbound: "Intake",
+  intake_auth: "Agent 1",
+  intake_classify: "Agent 1",
+  a2a_exchange: "Agent 1 → Agent 2",
+  devops_draft: "Agent 2",
+  a2a_fulfillment: "Agent 2 → Agent 3",
+  opa_vault: "Agent 3",
+  jira_write: "Agent 3",
+  done: "Atlas",
 };
 
 export default function TicketActivity({ events }: { events: ActivityEvent[] }) {
@@ -57,7 +70,7 @@ export default function TicketActivity({ events }: { events: ActivityEvent[] }) 
                           : e.actorKind === "okta" ? "text-accent" : "text-soft"
                       }`}
                     >
-                      {e.actor}
+                      {STEP_ACTOR_LABEL[e.step] ?? e.actor}
                     </span>
                     {handoff && (
                       <span className="rounded bg-raised px-1.5 py-0.5 text-2xs text-soft ring-1 ring-line">
@@ -91,16 +104,6 @@ export default function TicketActivity({ events }: { events: ActivityEvent[] }) 
           })}
         </AnimatePresence>
       </div>
-
-      {rows.some((e) => e.step === "done") && (
-        <Link
-          href="/how-it-works"
-          className="mt-1 inline-flex items-center gap-1.5 text-[14px] text-mute hover:text-accent"
-        >
-          <BookOpen className="h-3.5 w-3.5" />
-          See how Okta secured every hop of this →
-        </Link>
-      )}
     </div>
   );
 }
