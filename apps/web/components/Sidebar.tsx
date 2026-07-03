@@ -7,9 +7,9 @@ import AtlasMark from "@/components/AtlasMark";
 
 const NAV = [
   { href: "/", label: "Service Desk", icon: Inbox },
+  { href: "/architecture", label: "Architecture", icon: Network },
   { href: "/tokens", label: "Token Inspector", icon: KeyRound },
   { href: "/agents", label: "Agents", icon: Bot },
-  { href: "/architecture", label: "Architecture", icon: Network },
 ];
 
 export default function Sidebar() {
