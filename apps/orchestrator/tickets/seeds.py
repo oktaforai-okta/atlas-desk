@@ -30,35 +30,35 @@ _SEEDS: List[Ticket] = [
     Ticket("INC-4471", "Can't connect to VPN from home",
            "Since this morning the corporate VPN client fails with 'authentication timeout' "
            "right after I approve the push. Worked fine yesterday. I'm fully remote today.",
-           "dana.reed@atko.email", "Networking"),
+           "dana.reed@acme.example", "Networking"),
     Ticket("INC-4472", "Laptop won't power on after update",
            "My ThinkPad shut down during a Windows update last night and now the power light "
            "blinks three times and nothing happens. I have a customer demo at 2pm.",
-           "marco.silva@atko.email", "Hardware"),
+           "marco.silva@acme.example", "Hardware"),
     Ticket("INC-4473", "Need access to the Salesforce Revenue dashboard",
            "I just moved to the RevOps team and can't see the Revenue dashboard in Salesforce. "
            "My manager said to request access through IT.",
-           "priya.nair@atko.email", "Access Management"),
+           "priya.nair@acme.example", "Access Management"),
     Ticket("INC-4474", "Adobe Acrobat keeps crashing on launch",
            "Acrobat Pro crashes immediately on open since the latest version. Reinstalled twice, "
            "same result. I need it to process signed contracts.",
-           "evan.cole@atko.email", "Software"),
+           "evan.cole@acme.example", "Software"),
     Ticket("INC-4475", "Office Wi-Fi dropping every few minutes",
            "The 4th-floor conference room Wi-Fi disconnects every 5-10 minutes during calls. "
            "Multiple people on the floor see the same thing.",
-           "lena.fischer@atko.email", "Networking"),
+           "lena.fischer@acme.example", "Networking"),
     Ticket("INC-4476", "Replacement keyboard and dock request",
            "Several keys on my keyboard stopped working and my dock no longer charges the laptop. "
            "Requesting replacement hardware.",
-           "sam.osei@atko.email", "Hardware"),
+           "sam.osei@acme.example", "Hardware"),
     Ticket("INC-4477", "Locked out of GitHub org after SSO change",
            "After the SSO migration I can't access the engineering GitHub org. Getting "
            "'you are not a member' even though I was yesterday.",
-           "tara.lin@atko.email", "Access Management"),
+           "tara.lin@acme.example", "Access Management"),
     Ticket("INC-4478", "Slack huddle audio not working on desktop app",
            "Mic and audio fail only in the Slack desktop app; browser works. Reinstalled the app, "
            "no change. Blocks my daily standup.",
-           "noah.berg@atko.email", "Software"),
+           "noah.berg@acme.example", "Software"),
 ]
 
 

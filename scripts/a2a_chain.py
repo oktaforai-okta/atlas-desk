@@ -12,14 +12,18 @@ The final token (issued for Fulfillment) is the proof the user asked for: its `a
 claim nests BOTH Triage and Resolution as ai_agent actors.
 
 Requires (Okta Console): Atlas Fulfillment registered as an A2A resource
-(resourceUrl below, protecting CAS ausEXAMPLEWriteLan01) with Atlas Resolution
-added as a caller/delegation. Until then STEP 4 returns 'subject_token invalid'.
+(FUL_URL below, protecting CAS FUL_CAS) with Atlas Resolution added as a
+caller/delegation. Until then STEP 4 returns 'subject_token invalid'.
 
-Run:  ./.venv/bin/python scripts/a2a_chain.py
+Run (set these for your own tenant first, see docs/OKTA_SETUP.md):
+    OKTA_DOMAIN=... DEVOPS_AGENT_ID=... FULFILLMENT_AGENT_ID=... \\
+    TRIAGE_CAS_ID=... RESOLUTION_CAS_ID=... FULFILLMENT_CAS_ID=... \\
+    ./.venv/bin/python scripts/a2a_chain.py
 """
 from __future__ import annotations
 
 import json
+import os
 import pathlib
 import time
 import uuid
@@ -34,16 +38,16 @@ ENV = dict(
     if l.strip() and not l.startswith("#") and "=" in l
 )
 
-DOM = "https://example.oktapreview.com"
+DOM = f"https://{os.environ.get('OKTA_DOMAIN', 'your-org.oktapreview.com')}"
 SVC = ENV["INTAKE_SERVICE_CLIENT_ID"]
 SEC = ENV["INTAKE_SERVICE_SECRET"]
-TRI = ENV["INTAKE_AGENT_ID"]              # Atlas Triage (caller 1)
-RES = "wlpEXAMPLEAgentTwo01"              # Atlas Resolution (callee 1 / caller 2)
-FUL = "wlpEXAMPLEAgentThr01"             # Atlas Fulfillment (callee 2)
+TRI = ENV["INTAKE_AGENT_ID"]                                      # Atlas Triage (caller 1)
+RES = os.environ.get("DEVOPS_AGENT_ID", "<devops-agent-id>")      # Atlas Resolution (callee 1 / caller 2)
+FUL = os.environ.get("FULFILLMENT_AGENT_ID", "<fulfillment-agent-id>")  # Atlas Fulfillment (callee 2)
 
-TRIAGE_CAS, TRIAGE_URL = "ausEXAMPLEReadLane01", "https://atlas.acme.example/triage"
-RES_CAS, RES_URL = "ausEXAMPLEDelegate01", "https://atlas.acme.example/resolution"
-FUL_CAS, FUL_URL = "ausEXAMPLEWriteLan01", "https://atlas.acme.example/fulfillment"
+TRIAGE_CAS, TRIAGE_URL = os.environ.get("TRIAGE_CAS_ID", "<triage-cas-id>"), "https://atlas.acme.example/triage"
+RES_CAS, RES_URL = os.environ.get("RESOLUTION_CAS_ID", "<resolution-cas-id>"), "https://atlas.acme.example/resolution"
+FUL_CAS, FUL_URL = os.environ.get("FULFILLMENT_CAS_ID", "<fulfillment-cas-id>"), "https://atlas.acme.example/fulfillment"
 
 TRI_JWK = json.loads((REPO / ".secrets" / f"{TRI}.private.jwk.json").read_text())
 RES_JWK = json.loads((REPO / ".secrets" / f"{RES}.private.jwk.json").read_text())
@@ -120,7 +124,7 @@ def main() -> None:
             agents.append(node["sub"])
         node = node.get("act")
     print(f"\n   >>> agent workload principals in the act chain: {agents}")
-    print("   >>> expected: ['wlpEXAMPLEAgentTwo01' (Resolution), 'wlpEXAMPLEAgentOne01' (Triage)]")
+    print(f"   >>> expected: ['{RES}' (Resolution), '{TRI}' (Triage)]")
 
 
 if __name__ == "__main__":

@@ -19,20 +19,20 @@ export const FULFILL_COLOR = "#E0A34E";
 
 export const IDENTITIES: Record<string, Identity> = {
   "0oaEXAMPLEIntakeSvc1": { id: "0oaEXAMPLEIntakeSvc1", name: "Intake Service", kind: "service client", color: SERVICE_COLOR, isWorkloadPrincipal: false },
-  "wlpEXAMPLEAgentOne01": { id: "wlpEXAMPLEAgentOne01", name: "Triage Agent", kind: "AI agent", color: TRIAGE_COLOR, isWorkloadPrincipal: true },
-  "wlpEXAMPLEAgentTwo01": { id: "wlpEXAMPLEAgentTwo01", name: "Resolution Agent", kind: "AI agent", color: RESOLVE_COLOR, isWorkloadPrincipal: true },
-  "wlpEXAMPLEAgentThr01": { id: "wlpEXAMPLEAgentThr01", name: "Fulfillment Agent", kind: "AI agent", color: FULFILL_COLOR, isWorkloadPrincipal: true },
+  "wlpEXAMPLETriageAgt1": { id: "wlpEXAMPLETriageAgt1", name: "Triage Agent", kind: "AI agent", color: TRIAGE_COLOR, isWorkloadPrincipal: true },
+  "wlpEXAMPLEResolveAg1": { id: "wlpEXAMPLEResolveAg1", name: "Resolution Agent", kind: "AI agent", color: RESOLVE_COLOR, isWorkloadPrincipal: true },
+  "wlpEXAMPLEFulfillAg1": { id: "wlpEXAMPLEFulfillAg1", name: "Fulfillment Agent", kind: "AI agent", color: FULFILL_COLOR, isWorkloadPrincipal: true },
 };
 
 // Each agent's A2A custom authorization server → the identity it protects.
 // A real A2A token's `iss` is the target's CAS; `aud` is its resourceUrl.
 const ISSUER_AS_TO_IDENTITY: Record<string, string> = {
-  ausEXAMPLEDelegate01: "wlpEXAMPLEAgentTwo01",
-  ausEXAMPLEWriteLan01: "wlpEXAMPLEAgentThr01",
+  ausEXAMPLEResolveCA1: "wlpEXAMPLEResolveAg1",
+  ausEXAMPLEFulfillCA1: "wlpEXAMPLEFulfillAg1",
 };
 const AUD_TO_IDENTITY: Record<string, string> = {
-  "https://atlas.acme.example/resolution": "wlpEXAMPLEAgentTwo01",
-  "https://atlas.acme.example/fulfillment": "wlpEXAMPLEAgentThr01",
+  "https://atlas.acme.example/resolution": "wlpEXAMPLEResolveAg1",
+  "https://atlas.acme.example/fulfillment": "wlpEXAMPLEFulfillAg1",
 };
 
 export function identityForId(id: string): Identity | null {

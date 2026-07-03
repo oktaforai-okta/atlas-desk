@@ -60,11 +60,11 @@ export default function HowItWorks() {
               caption="hop-1 token, issued by the Atlas Resolution A2A authorization server"
               fallbackClaims={{
                 sub: "0oaEXAMPLEIntakeSvc1",
-                act: { sub: "wlpEXAMPLEAgentOne01", sub_profile: "ai_agent",
+                act: { sub: "wlpEXAMPLETriageAgt1", sub_profile: "ai_agent",
                        act: { sub: "0oaEXAMPLEIntakeSvc1", sub_profile: "service" } },
                 aud: "https://atlas.acme.example/resolution",
                 scp: ["agent.invoke"],
-                iss: "https://example.oktapreview.com/oauth2/ausEXAMPLEDelegate01",
+                iss: "https://example.oktapreview.com/oauth2/ausEXAMPLEResolveCA1",
               }}
             />
           </div>
@@ -80,12 +80,12 @@ export default function HowItWorks() {
               caption="final A2A token, issued by the Atlas Fulfillment A2A authorization server"
               fallbackClaims={{
                 sub: "0oaEXAMPLEIntakeSvc1",
-                act: { sub: "wlpEXAMPLEAgentTwo01", sub_profile: "ai_agent",
-                       act: { sub: "wlpEXAMPLEAgentOne01", sub_profile: "ai_agent",
+                act: { sub: "wlpEXAMPLEResolveAg1", sub_profile: "ai_agent",
+                       act: { sub: "wlpEXAMPLETriageAgt1", sub_profile: "ai_agent",
                               act: { sub: "0oaEXAMPLEIntakeSvc1", sub_profile: "service" } } },
                 aud: "https://atlas.acme.example/fulfillment",
                 scp: ["agent.invoke"],
-                iss: "https://example.oktapreview.com/oauth2/ausEXAMPLEWriteLan01",
+                iss: "https://example.oktapreview.com/oauth2/ausEXAMPLEFulfillCA1",
               }}
             />
           </div>
