@@ -27,14 +27,13 @@ export interface TokenTabMeta {
 
 export const TOKEN_TABS: TokenTabMeta[] = [
   { id: "t1", title: "Bootstrap", subtitle: "Access Token", agentGeneric: "Intake Service", color: SERVICE_COLOR },
-  // Bare "Agent N" = that agent's own token. The two ID-JAG tabs aren't about
-  // a single agent, they're the handoff between two, so name the handoff
-  // itself instead of reusing a bare "Agent N" that would collide with the
-  // agent's own token tab.
+  // Every tab is named by what it IS, not just who it's about: a handoff
+  // between two agents ("Agent 1 -> Agent 2"), or an agent's own token
+  // ("Agent 2 Token"). A bare "Agent N" doesn't say which of those it is.
   { id: "idjag1", title: "Agent 1 → Agent 2", subtitle: "ID-JAG", agentGeneric: "Agent 1", agentReal: "Triage", color: TRIAGE_COLOR },
-  { id: "t_res", title: "Agent 2", subtitle: "Access Token · act nests 1", agentGeneric: "Agent 2", agentReal: "Resolution", color: RESOLVE_COLOR },
+  { id: "t_res", title: "Agent 2 Token", subtitle: "Access Token · act nests 1", agentGeneric: "Agent 2", agentReal: "Resolution", color: RESOLVE_COLOR },
   { id: "idjag2", title: "Agent 2 → Agent 3", subtitle: "ID-JAG", agentGeneric: "Agent 2", agentReal: "Resolution", color: RESOLVE_COLOR },
-  { id: "t_ful", title: "Agent 3", subtitle: "Access Token · act nests 2", agentGeneric: "Agent 3", agentReal: "Fulfillment", color: FULFILL_COLOR, final: true },
+  { id: "t_ful", title: "Agent 3 Token", subtitle: "Access Token · act nests 2", agentGeneric: "Agent 3", agentReal: "Fulfillment", color: FULFILL_COLOR, final: true },
   { id: "vault", title: "Vault exchange", subtitle: "Credential release", agentGeneric: "Agent 3", agentReal: "Fulfillment", color: VAULT_COLOR, isVault: true },
 ];
 
