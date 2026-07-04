@@ -203,9 +203,10 @@ function VaultTab({ data, notReached, isReal }: { data: Record<string, unknown> 
       <div className="rounded-lg border border-line bg-raised/40 p-3 text-[12px] leading-relaxed text-soft">
         <span className="font-semibold text-ink">Why {subjectRef === "t_res" ? "the token Agent 2 handed it, not the one it minted" : "this specific subject"}:</span>{" "}
         verified live against a real Okta tenant: presenting Agent 3&apos;s <em>own</em> inbound A2A token (the
-        &quot;Agent 2&quot; tab, the one that authorized invoking it) succeeds, presenting the token it mints
-        downstream (the &quot;Agent 3&quot; tab), or the raw service-client bootstrap token (&quot;Bootstrap&quot;),
-        is rejected with a delegation-policy error. Full write-up in the architecture doc linked above.
+        &quot;Agent 2 Token&quot; tab, the one that authorized invoking it) succeeds, presenting the token it
+        mints downstream (the &quot;Agent 3 Token&quot; tab), or the raw service-client bootstrap token
+        (&quot;Bootstrap&quot;), is rejected with a delegation-policy error. Full write-up in the architecture
+        doc linked above.
       </div>
       {!isReal && (
         <p className="text-2xs text-mute">Illustrative example — simulate a ticket to see your own run&apos;s real exchange.</p>
