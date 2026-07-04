@@ -49,6 +49,7 @@ const ISSUER_AS_TO_IDENTITY: Record<string, string> = {
   ausEXAMPLEFulfillCA1: "wlpEXAMPLEFulfillAg1",
 };
 const AUD_TO_IDENTITY: Record<string, string> = {
+  "https://atlas.acme.example/triage": "wlpEXAMPLETriageAgt1",
   "https://atlas.acme.example/resolution": "wlpEXAMPLEResolveAg1",
   "https://atlas.acme.example/fulfillment": "wlpEXAMPLEFulfillAg1",
 };

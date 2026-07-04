@@ -87,7 +87,7 @@ def _extract_vaulted_secret(vault: dict) -> str:
     return ""
 
 
-def _fake_jwt(payload: dict) -> str:
+def _fake_jwt(payload: dict, typ: str = "JWT") -> str:
     """Unsigned, syntactically-real JWT for demo mode (no Okta creds configured).
 
     alg=none is the actual RFC 7515 vocabulary for an unsecured JWS, not an
@@ -95,10 +95,14 @@ def _fake_jwt(payload: dict) -> str:
     loud, non-cryptographic third segment so nobody could mistake it for a
     live Okta-issued token. Two independent "this isn't real" tells: one for
     anyone who reads JWT internals, one for anyone who just glances at it.
+
+    `typ` is overridable so a demo ID-JAG carries the real "oauth-id-jag+jwt"
+    header marker that distinguishes it from a plain access token, as a real
+    one does.
     """
     def b64(d: dict) -> str:
         return base64.urlsafe_b64encode(json.dumps(d).encode()).rstrip(b"=").decode()
-    return f"{b64({'alg': 'none', 'typ': 'JWT'})}.{b64(payload)}.DEMO-UNSIGNED-NOT-A-REAL-OKTA-TOKEN"
+    return f"{b64({'alg': 'none', 'typ': typ})}.{b64(payload)}.DEMO-UNSIGNED-NOT-A-REAL-OKTA-TOKEN"
 
 
 # Every case is assigned to a single shared Jira account (JIRA_ASSIGNEE_EMAIL)
@@ -204,23 +208,44 @@ async def _run_demo(stream: EventStream, seed: int, inbound: Optional[dict] = No
         t = generate_ticket(seed)
         dept = t.expected_department
     issue = f"ITSD-{120 + seed % 60}"
-    res_iss = f"https://{OKTA_DOMAIN}/oauth2/<resolution-cas-id>"
-    ful_iss = f"https://{OKTA_DOMAIN}/oauth2/<fulfillment-cas-id>"
     # NOTE: this demo path only runs when Okta creds are ABSENT (live_ready() is
-    # False). token_claims/raw_tokens below use illustrative placeholders ("wlp ·
-    # Triage") and unsigned (alg=none) tokens, NOT real workload-principal ids or
-    # real Okta-issued JWTs, so nothing here can masquerade as a verified System
-    # Log entry. The live path (_run_live) emits the real, log-matching claims.
+    # False). The claims below use illustrative EXAMPLE_* placeholder ids (a 0oa…
+    # service client + wlp… workload principals) and unsigned (alg=none) tokens,
+    # NOT a real tenant's ids or real Okta-issued JWTs, so nothing here can
+    # masquerade as a verified System Log entry. But the SHAPES mirror the real
+    # tokens exactly (verified from live runs): sub is always the Intake Service
+    # root, cid/client_id is the holding agent, act nests the full chain with
+    # sub_profile, ID-JAGs use a bare-org iss + AS-URL aud + resource claim + the
+    # oauth-id-jag+jwt header. This must stay in lockstep with the frontend
+    # illustrativeRawTokens() in apps/web/lib/tokenInspector.ts.
     # Order matches the live path exactly: exchange -> draft -> fulfillment -> vault -> file.
-    res_claims = {"sub": "wlp · Triage",
-                  "act": {"sub": "wlp · Triage", "scope": "agent.invoke"},
-                  "aud": "https://atlas.acme.example/resolution",
-                  "scp": ["agent.invoke"], "iss": res_iss}
-    ful_claims = {"sub": "wlp · Resolution",
-                  "act": {"sub": "wlp · Resolution", "scope": "agent.invoke",
-                          "act": {"sub": "wlp · Triage", "scope": "agent.invoke"}},
-                  "aud": "https://atlas.acme.example/fulfillment",
-                  "scp": ["agent.invoke"], "iss": ful_iss}
+    org = "https://example.oktapreview.com"
+    triage_cas, resolve_cas, fulfill_cas = (f"{org}/oauth2/<triage-cas-id>",
+                                            f"{org}/oauth2/<resolution-cas-id>",
+                                            f"{org}/oauth2/<fulfillment-cas-id>")
+    triage_res = "https://atlas.acme.example/triage"
+    resolve_res = "https://atlas.acme.example/resolution"
+    fulfill_res = "https://atlas.acme.example/fulfillment"
+    # Fulfillment (the hop-2 callee) is identified by its resource URL, not a wlp
+    # in any act chain, so only these three principal ids appear in the claims.
+    ex_intake, ex_triage, ex_resolve = "0oaEXAMPLEIntakeSvc1", "wlpEXAMPLETriageAgt1", "wlpEXAMPLEResolveAg1"
+    IAT, EXP, IDJAG_EXP = 1783120519, 1783124119, 1783120819
+    act_triage = {"sub": ex_triage, "sub_profile": "ai_agent", "act": {"sub": ex_intake, "sub_profile": "service"}}
+    act_resolve = {"sub": ex_resolve, "sub_profile": "ai_agent", "act": act_triage}
+    t1_claims = {"ver": 1, "jti": "AT.EXAMPLE-bootstrap", "iss": triage_cas, "aud": triage_res,
+                 "iat": IAT, "exp": EXP, "cid": ex_intake, "scp": ["agent.invoke"], "sub": ex_intake}
+    idjag1_claims = {"jti": "IDAAG.EXAMPLE-1", "iss": org, "aud": resolve_cas, "iat": IAT, "exp": IDJAG_EXP,
+                     "sub": ex_intake, "resource": resolve_res, "client_id": ex_triage,
+                     "sub_profile": "service", "scope": "agent.invoke", "act": act_triage}
+    res_claims = {"ver": 1, "jti": "AT.EXAMPLE-res", "iss": resolve_cas, "aud": resolve_res, "iat": IAT,
+                  "exp": EXP, "cid": ex_triage, "scp": ["agent.invoke"], "auth_time": IAT, "sub": ex_intake,
+                  "act": act_triage, "sub_profile": "service"}
+    idjag2_claims = {"jti": "IDAAG.EXAMPLE-2", "iss": org, "aud": fulfill_cas, "iat": IAT, "exp": IDJAG_EXP,
+                     "sub": ex_intake, "resource": fulfill_res, "client_id": ex_resolve,
+                     "sub_profile": "service", "scope": "agent.invoke", "act": act_resolve}
+    ful_claims = {"ver": 1, "jti": "AT.EXAMPLE-ful", "iss": fulfill_cas, "aud": fulfill_res, "iat": IAT,
+                  "exp": EXP, "cid": ex_resolve, "scp": ["agent.invoke"], "auth_time": IAT, "sub": ex_intake,
+                  "act": act_resolve, "sub_profile": "service"}
     seq = [
         ActivityEvent("inbound", "Intake", "intake", "Received via intake API", primary=True,
                       tech=f"{t.id} ingested from the external ticketing system"),
@@ -235,9 +260,8 @@ async def _run_demo(stream: EventStream, seed: int, inbound: Optional[dict] = No
                       tech="Agent-to-agent delegation over Okta (machine context, scope agent.invoke).",
                       token_claims=res_claims,
                       raw_tokens={
-                          "t1": _fake_jwt({"sub": "svc · Intake Service", "aud": "https://atlas.acme.example/triage",
-                                           "scp": ["agent.invoke"], "iss": res_iss}),
-                          "idjag1": _fake_jwt({**res_claims, "requested_token_type": "id-jag"}),
+                          "t1": _fake_jwt(t1_claims),
+                          "idjag1": _fake_jwt(idjag1_claims, "oauth-id-jag+jwt"),
                           "t_res": _fake_jwt(res_claims),
                       },
                       system_log_id="app.oauth2.token.grant.id_jag"),
@@ -250,7 +274,7 @@ async def _run_demo(stream: EventStream, seed: int, inbound: Optional[dict] = No
                            "Resolution ← Triage ← Intake Service, two workload principals in one credential.",
                       token_claims=ful_claims,
                       raw_tokens={
-                          "idjag2": _fake_jwt({**ful_claims, "requested_token_type": "id-jag"}),
+                          "idjag2": _fake_jwt(idjag2_claims, "oauth-id-jag+jwt"),
                           "t_ful": _fake_jwt(ful_claims),
                       },
                       system_log_id="app.oauth2.token.grant.id_jag"),
