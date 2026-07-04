@@ -1,48 +1,66 @@
-// Token Inspector data: the six inspectable exchanges in this pipeline, a
-// client-side JWT decoder (no signature verification — same accepted pattern
-// as everywhere else in this app), and an illustrative fallback set for a cold
-// landing (no run captured yet in this session).
+// Token Inspector data: the delegation chain as FOUR hops, a client-side JWT
+// decoder + RS256 signature verification, and an illustrative fallback set for
+// a cold landing (no run captured yet in this session).
 //
-// Six, not five like the reference pattern this was modeled on, because this
-// pipeline has two full A2A hops plus a vault exchange: T1 (service-client
-// bootstrap) -> ID-JAG#1 -> T_res (Agent 2's token, act nests 1) -> ID-JAG#2 ->
-// T_ful (Agent 3's token, act nests 2, final delegation token) -> the vault
-// exchange (not a claims-bearing JWT — shows that T_res, not T_ful, is the
-// subject presented, per this project's own verified finding).
+// The chain has 6 tokens but only 4 distinct agent-to-agent hops, because each
+// A2A hop uses TWO tokens: an ID-JAG (the delegation grant you mint), then the
+// access token you redeem it for. Naming 6 per-token tabs by agent inevitably
+// produced duplicate "Agent 2 / Agent 3" labels; grouping by hop does not.
+// So the tabs are the hops, and each hop shows its leg(s):
+//
+//   Intake Service → Agent 1   (Bootstrap: t1, client_credentials, no id-jag)
+//   Agent 1 → Agent 2          (idjag1 grant, then t_res access token)
+//   Agent 2 → Agent 3          (idjag2 grant, then t_ful access token)  [final]
+//   Agent 3 → Jira             (OPA vault exchange; releases the Jira credential)
+//
+// Read left to right the hops chain: every arrow's destination is the next
+// arrow's origin. Attribution is by the WLP actually inside each token (cid /
+// client_id / act.sub), verified against real captured tokens — the holder is
+// the caller, the aud/resource is the callee.
 
 import { SERVICE_COLOR, TRIAGE_COLOR, RESOLVE_COLOR, FULFILL_COLOR } from "@/lib/identities";
 
 export const VAULT_COLOR = "#64BBC8";
 
-export interface TokenTabMeta {
-  id: string;
-  title: string;
-  subtitle: string;
-  agentGeneric: string;
-  agentReal?: string;
-  color: string;
-  final?: boolean;
-  isVault?: boolean; // structurally different tab: no claims/raw JWT, exchange metadata only
+// One inspectable token within a hop. `key` matches the raw_tokens map emitted
+// by the backend (and illustrativeRawTokens below). `kind` distinguishes the
+// two legs of an A2A exchange.
+export interface TokenLegMeta {
+  key: string; // "t1" | "idjag1" | "t_res" | "idjag2" | "t_ful"
+  role: string; // human label, e.g. "Delegation grant" / "Access token"
+  kind: "ID-JAG" | "Access Token";
 }
 
-export const TOKEN_TABS: TokenTabMeta[] = [
-  { id: "t1", title: "Bootstrap", subtitle: "Access Token", agentGeneric: "Intake Service", color: SERVICE_COLOR },
-  // Every tab is named by what it IS, not just who it's about: a handoff
-  // between two agents ("Agent 1 -> Agent 2"), or an agent's own token
-  // ("Agent 1 Token"). A bare "Agent N" doesn't say which of those it is.
-  //
-  // The access-token tabs are attributed by whose WLP is actually the cid /
-  // act.sub inside them, verified against real captured tokens, NOT by which
-  // resource they're scoped to reach. t_res carries Agent 1 (Triage)'s WLP
-  // (it's the token Triage uses to call Agent 2), t_ful carries Agent 2
-  // (Resolution)'s WLP (the token Resolution uses to call Agent 3). Naming
-  // them after the resource they target instead of the identity inside them
-  // was the actual source of the "why are there two Agent 2s" confusion.
-  { id: "idjag1", title: "Agent 1 → Agent 2", subtitle: "ID-JAG", agentGeneric: "Agent 1", agentReal: "Triage", color: TRIAGE_COLOR },
-  { id: "t_res", title: "Agent 1 Token", subtitle: "Access Token · scoped to invoke Agent 2", agentGeneric: "Agent 1", agentReal: "Triage", color: TRIAGE_COLOR },
-  { id: "idjag2", title: "Agent 2 → Agent 3", subtitle: "ID-JAG", agentGeneric: "Agent 2", agentReal: "Resolution", color: RESOLVE_COLOR },
-  { id: "t_ful", title: "Agent 2 Token", subtitle: "Access Token · scoped to invoke Agent 3 · act nests 2", agentGeneric: "Agent 2", agentReal: "Resolution", color: RESOLVE_COLOR, final: true },
-  { id: "vault", title: "Vault exchange", subtitle: "Credential release", agentGeneric: "Agent 3", agentReal: "Fulfillment", color: VAULT_COLOR, isVault: true },
+export interface HopTabMeta {
+  id: string;
+  title: string; // the hop, e.g. "Agent 1 → Agent 2" — always a distinct agent pair
+  fromColor: string; // origin agent color (tab accent uses `toColor`)
+  toColor: string; // destination agent color
+  legs?: TokenLegMeta[]; // ordered: grant (if any) then access token
+  final?: boolean; // the deepest A2A token in the chain
+  isVault?: boolean; // structurally different: token-exchange metadata, not a JWT
+}
+
+export const TOKEN_TABS: HopTabMeta[] = [
+  {
+    id: "bootstrap", title: "Intake Service → Agent 1", fromColor: SERVICE_COLOR, toColor: TRIAGE_COLOR,
+    legs: [{ key: "t1", role: "Access token", kind: "Access Token" }],
+  },
+  {
+    id: "hop1", title: "Agent 1 → Agent 2", fromColor: TRIAGE_COLOR, toColor: RESOLVE_COLOR,
+    legs: [
+      { key: "idjag1", role: "Delegation grant", kind: "ID-JAG" },
+      { key: "t_res", role: "Access token", kind: "Access Token" },
+    ],
+  },
+  {
+    id: "hop2", title: "Agent 2 → Agent 3", fromColor: RESOLVE_COLOR, toColor: FULFILL_COLOR, final: true,
+    legs: [
+      { key: "idjag2", role: "Delegation grant", kind: "ID-JAG" },
+      { key: "t_ful", role: "Access token", kind: "Access Token" },
+    ],
+  },
+  { id: "vault", title: "Agent 3 → Jira", fromColor: FULFILL_COLOR, toColor: VAULT_COLOR, isVault: true },
 ];
 
 export interface DecodedJWT {
@@ -140,38 +158,75 @@ function b64urlEncode(obj: object): string {
 // Client-side twin of the backend's _fake_jwt (apps/orchestrator/main.py):
 // alg=none is the real RFC 7515 vocabulary for an unsecured JWS, plus a loud
 // non-cryptographic third segment, so nothing here could be mistaken for a
-// real Okta-issued token.
-function fakeJwt(payload: Record<string, unknown>): string {
-  return `${b64urlEncode({ alg: "none", typ: "JWT" })}.${b64urlEncode(payload)}.DEMO-UNSIGNED-NOT-A-REAL-OKTA-TOKEN`;
+// real Okta-issued token. `typ` is overridable so an illustrative ID-JAG
+// carries the real "oauth-id-jag+jwt" header marker that distinguishes it
+// from a plain access token, exactly as a real one does.
+function fakeJwt(payload: Record<string, unknown>, typ = "JWT"): string {
+  return `${b64urlEncode({ alg: "none", typ })}.${b64urlEncode(payload)}.DEMO-UNSIGNED-NOT-A-REAL-OKTA-TOKEN`;
 }
 
-const EXAMPLE_RES_ISS = "https://example.oktapreview.com/oauth2/<resolution-cas-id>";
-const EXAMPLE_FUL_ISS = "https://example.oktapreview.com/oauth2/<fulfillment-cas-id>";
+// Illustrative identities — the same EXAMPLE_* placeholder ids registered in
+// identities.ts, so the fallback tokens annotate to friendly agent names and
+// carry the real Okta id SHAPE (0oa… client, wlp… workload principals) rather
+// than a human label. Kept out of any real tenant's namespace on purpose.
+const EX = {
+  intake: "0oaEXAMPLEIntakeSvc1", // Intake Service (service client, the root subject)
+  triage: "wlpEXAMPLETriageAgt1", // Agent 1
+  resolve: "wlpEXAMPLEResolveAg1", // Agent 2
+  fulfill: "wlpEXAMPLEFulfillAg1", // Agent 3
+};
+const EX_ORG = "https://example.oktapreview.com"; // ID-JAGs are issued by the bare org
+const EX_TRIAGE_CAS = `${EX_ORG}/oauth2/<triage-cas-id>`;
+const EX_RESOLVE_CAS = `${EX_ORG}/oauth2/<resolution-cas-id>`;
+const EX_FULFILL_CAS = `${EX_ORG}/oauth2/<fulfillment-cas-id>`;
+const EX_TRIAGE_RES = "https://atlas.acme.example/triage";
+const EX_RESOLVE_RES = "https://atlas.acme.example/resolution";
+const EX_FULFILL_RES = "https://atlas.acme.example/fulfillment";
+// Fixed illustrative window (a real July 2026 epoch) — constant so server- and
+// client-rendered output match exactly (no hydration drift). ID-JAGs are short-
+// lived (5 min); access tokens an hour, same as the real ones.
+const EX_IAT = 1783120519, EX_EXP = EX_IAT + 3600, EX_IDJAG_EXP = EX_IAT + 300;
 
-const EXAMPLE_RES_CLAIMS = {
-  sub: "wlp · Triage",
-  act: { sub: "wlp · Triage", scope: "agent.invoke" },
-  aud: "https://atlas.acme.example/resolution",
-  scp: ["agent.invoke"], iss: EXAMPLE_RES_ISS,
-};
-const EXAMPLE_FUL_CLAIMS = {
-  sub: "wlp · Resolution",
-  act: { sub: "wlp · Resolution", scope: "agent.invoke", act: { sub: "wlp · Triage", scope: "agent.invoke" } },
-  aud: "https://atlas.acme.example/fulfillment",
-  scp: ["agent.invoke"], iss: EXAMPLE_FUL_ISS,
-};
+// The nested actor chain, newest-actor-outermost, each node {sub, sub_profile,
+// act}, terminating in the Intake Service root — exactly the real shape.
+const EX_ACT_TRIAGE = { sub: EX.triage, sub_profile: "ai_agent", act: { sub: EX.intake, sub_profile: "service" } };
+const EX_ACT_RESOLVE = { sub: EX.resolve, sub_profile: "ai_agent", act: EX_ACT_TRIAGE };
 
 // Illustrative-only fallback for a cold landing (no captured run this session).
-// Mirrors the backend demo-mode claim shapes exactly, so the "example" story
-// told here matches the one told when you actually simulate a ticket without
-// live Okta credentials configured.
+// Every field mirrors the real token shapes verified from live runs: sub is
+// ALWAYS the Intake Service root, cid/client_id is the holding agent, act nests
+// the full chain, ID-JAGs use a bare-org iss + AS-URL aud + a resource claim.
 export function illustrativeRawTokens(): Record<string, string> {
   return {
-    t1: fakeJwt({ sub: "svc · Intake Service", aud: "https://atlas.acme.example/triage", scp: ["agent.invoke"], iss: EXAMPLE_RES_ISS }),
-    idjag1: fakeJwt({ ...EXAMPLE_RES_CLAIMS, requested_token_type: "id-jag" }),
-    t_res: fakeJwt(EXAMPLE_RES_CLAIMS),
-    idjag2: fakeJwt({ ...EXAMPLE_FUL_CLAIMS, requested_token_type: "id-jag" }),
-    t_ful: fakeJwt(EXAMPLE_FUL_CLAIMS),
+    // Bootstrap: Intake Service's client_credentials token, audience = Agent 1. No act (it's the root).
+    t1: fakeJwt({
+      ver: 1, jti: "AT.EXAMPLE-bootstrap", iss: EX_TRIAGE_CAS, aud: EX_TRIAGE_RES,
+      iat: EX_IAT, exp: EX_EXP, cid: EX.intake, scp: ["agent.invoke"], sub: EX.intake,
+    }),
+    // Hop 1 grant: Agent 1's ID-JAG targeting Agent 2's AS. act nests Triage ← Intake.
+    idjag1: fakeJwt({
+      jti: "IDAAG.EXAMPLE-1", iss: EX_ORG, aud: EX_RESOLVE_CAS, iat: EX_IAT, exp: EX_IDJAG_EXP,
+      sub: EX.intake, resource: EX_RESOLVE_RES, client_id: EX.triage, sub_profile: "service",
+      scope: "agent.invoke", act: EX_ACT_TRIAGE,
+    }, "oauth-id-jag+jwt"),
+    // Hop 1 token: the access token Agent 1 holds to call Agent 2. cid = Triage.
+    t_res: fakeJwt({
+      ver: 1, jti: "AT.EXAMPLE-res", iss: EX_RESOLVE_CAS, aud: EX_RESOLVE_RES, iat: EX_IAT, exp: EX_EXP,
+      cid: EX.triage, scp: ["agent.invoke"], auth_time: EX_IAT, sub: EX.intake,
+      act: EX_ACT_TRIAGE, sub_profile: "service",
+    }),
+    // Hop 2 grant: Agent 2's ID-JAG targeting Agent 3's AS. act nests Resolution ← Triage ← Intake.
+    idjag2: fakeJwt({
+      jti: "IDAAG.EXAMPLE-2", iss: EX_ORG, aud: EX_FULFILL_CAS, iat: EX_IAT, exp: EX_IDJAG_EXP,
+      sub: EX.intake, resource: EX_FULFILL_RES, client_id: EX.resolve, sub_profile: "service",
+      scope: "agent.invoke", act: EX_ACT_RESOLVE,
+    }, "oauth-id-jag+jwt"),
+    // Hop 2 token: the access token Agent 2 holds to call Agent 3. cid = Resolution. The final A2A token.
+    t_ful: fakeJwt({
+      ver: 1, jti: "AT.EXAMPLE-ful", iss: EX_FULFILL_CAS, aud: EX_FULFILL_RES, iat: EX_IAT, exp: EX_EXP,
+      cid: EX.resolve, scp: ["agent.invoke"], auth_time: EX_IAT, sub: EX.intake,
+      act: EX_ACT_RESOLVE, sub_profile: "service",
+    }),
   };
 }
 
