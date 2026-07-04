@@ -29,11 +29,19 @@ export const TOKEN_TABS: TokenTabMeta[] = [
   { id: "t1", title: "Bootstrap", subtitle: "Access Token", agentGeneric: "Intake Service", color: SERVICE_COLOR },
   // Every tab is named by what it IS, not just who it's about: a handoff
   // between two agents ("Agent 1 -> Agent 2"), or an agent's own token
-  // ("Agent 2 Token"). A bare "Agent N" doesn't say which of those it is.
+  // ("Agent 1 Token"). A bare "Agent N" doesn't say which of those it is.
+  //
+  // The access-token tabs are attributed by whose WLP is actually the cid /
+  // act.sub inside them, verified against real captured tokens, NOT by which
+  // resource they're scoped to reach. t_res carries Agent 1 (Triage)'s WLP
+  // (it's the token Triage uses to call Agent 2), t_ful carries Agent 2
+  // (Resolution)'s WLP (the token Resolution uses to call Agent 3). Naming
+  // them after the resource they target instead of the identity inside them
+  // was the actual source of the "why are there two Agent 2s" confusion.
   { id: "idjag1", title: "Agent 1 → Agent 2", subtitle: "ID-JAG", agentGeneric: "Agent 1", agentReal: "Triage", color: TRIAGE_COLOR },
-  { id: "t_res", title: "Agent 2 Token", subtitle: "Access Token · act nests 1", agentGeneric: "Agent 2", agentReal: "Resolution", color: RESOLVE_COLOR },
+  { id: "t_res", title: "Agent 1 Token", subtitle: "Access Token · scoped to invoke Agent 2", agentGeneric: "Agent 1", agentReal: "Triage", color: TRIAGE_COLOR },
   { id: "idjag2", title: "Agent 2 → Agent 3", subtitle: "ID-JAG", agentGeneric: "Agent 2", agentReal: "Resolution", color: RESOLVE_COLOR },
-  { id: "t_ful", title: "Agent 3 Token", subtitle: "Access Token · act nests 2", agentGeneric: "Agent 3", agentReal: "Fulfillment", color: FULFILL_COLOR, final: true },
+  { id: "t_ful", title: "Agent 2 Token", subtitle: "Access Token · scoped to invoke Agent 3 · act nests 2", agentGeneric: "Agent 2", agentReal: "Resolution", color: RESOLVE_COLOR, final: true },
   { id: "vault", title: "Vault exchange", subtitle: "Credential release", agentGeneric: "Agent 3", agentReal: "Fulfillment", color: VAULT_COLOR, isVault: true },
 ];
 

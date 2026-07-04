@@ -8,16 +8,56 @@
 // cold landing.
 
 import { useMemo, useState } from "react";
-import { Copy, Check, ShieldCheck, KeyRound } from "lucide-react";
+import { Copy, Check, ShieldCheck, KeyRound, ArrowRight } from "lucide-react";
 import TokenBlock from "@/components/TokenBlock";
 import DecodedCard from "@/components/DecodedCard";
 import SignatureVerification from "@/components/SignatureVerification";
 import { readCapturedRawTokens, type CapturedRawTokens } from "@/lib/events";
 import { TOKEN_TABS, decodeJwt, illustrativeRawTokens, illustrativeVaultData } from "@/lib/tokenInspector";
+import { identityForId, identityForAud, shortId } from "@/lib/identities";
 
 function hexA(hex: string, a: number): string {
   const r = parseInt(hex.slice(1, 3), 16), g = parseInt(hex.slice(3, 5), 16), b = parseInt(hex.slice(5, 7), 16);
   return `rgba(${r},${g},${b},${a})`;
+}
+
+// The literal answer to "which workload principal is this": who actually
+// holds this credential (cid / client_id / sub — verified against real
+// captured tokens, NOT assumed from which resource it's scoped to reach),
+// and which resource (resource / aud) it's scoped to invoke. Two identities,
+// shown explicitly, so nobody has to reverse-engineer it from raw claims.
+function HolderTargetBanner({ payload }: { payload: Record<string, unknown> }) {
+  const holderId = String(payload["cid"] ?? payload["client_id"] ?? payload["sub"] ?? "");
+  const targetUrl = String(payload["resource"] ?? payload["aud"] ?? "");
+  const holder = holderId ? identityForId(holderId) : null;
+  const target = targetUrl ? identityForAud(targetUrl) : null;
+  if (!holderId && !targetUrl) return null;
+  return (
+    <div className="flex flex-wrap items-center gap-2 rounded-lg border border-line bg-raised/40 px-3 py-2.5 text-[13px]">
+      <span className="text-mute">Held by</span>
+      <Party identity={holder} fallbackId={holderId} />
+      {targetUrl && (
+        <>
+          <ArrowRight className="h-3.5 w-3.5 text-mute" />
+          <span className="text-mute">scoped to invoke</span>
+          <Party identity={target} fallbackId={targetUrl} />
+        </>
+      )}
+    </div>
+  );
+}
+
+function Party({ identity, fallbackId }: { identity: ReturnType<typeof identityForId>; fallbackId: string }) {
+  if (identity) {
+    return (
+      <span className="inline-flex items-center gap-1.5 font-semibold" style={{ color: identity.color }}>
+        <span className="h-2 w-2 rounded-full" style={{ background: identity.color }} />
+        {identity.name}
+        <span className="font-mono text-2xs text-mute">{shortId(fallbackId)}</span>
+      </span>
+    );
+  }
+  return <span className="font-mono text-2xs text-mute [overflow-wrap:anywhere]">{shortId(fallbackId)}</span>;
 }
 
 export default function TokenInspector() {
@@ -111,6 +151,8 @@ export default function TokenInspector() {
             </div>
           ) : decoded ? (
             <div className="space-y-5">
+              <HolderTargetBanner payload={decoded.payload} />
+
               <DecodedCard title="Decoded Header" claims={decoded.header} jsonView={<TokenBlock claims={decoded.header} />} />
 
               <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
@@ -194,19 +236,24 @@ function VaultTab({ data, notReached, isReal }: { data: Record<string, unknown> 
           <span className="text-mute">subject_token</span>
           <span className="[overflow-wrap:anywhere]">
             <span className="tok-act font-semibold">{subjectRef}</span>
-            <span className="text-mute"> — Agent 3&apos;s (Fulfillment&apos;s) own inbound token, the delegated authority it was handed, not a token it minted itself</span>
+            <span className="text-mute">
+              {" "}— Agent 1 (Triage)&apos;s own access token, the very first one issued in this chain. Not Agent
+              2 (Resolution)&apos;s token, and not Fulfillment&apos;s own credential, even though Fulfillment is
+              the one calling the vault.
+            </span>
           </span>
           <span className="text-mute">released</span>
           <span className={vaulted ? "text-ok" : "text-warn"}>{vaulted ? "true" : "false (fell back to a static credential)"}</span>
         </div>
       </div>
       <div className="rounded-lg border border-line bg-raised/40 p-3 text-[12px] leading-relaxed text-soft">
-        <span className="font-semibold text-ink">Why {subjectRef === "t_res" ? "the token Agent 2 handed it, not the one it minted" : "this specific subject"}:</span>{" "}
-        verified live against a real Okta tenant: presenting Agent 3&apos;s <em>own</em> inbound A2A token (the
-        &quot;Agent 2 Token&quot; tab, the one that authorized invoking it) succeeds, presenting the token it
-        mints downstream (the &quot;Agent 3 Token&quot; tab), or the raw service-client bootstrap token
-        (&quot;Bootstrap&quot;), is rejected with a delegation-policy error. Full write-up in the architecture
-        doc linked above.
+        <span className="font-semibold text-ink">Why this specific subject:</span>{" "}
+        verified live against a real Okta tenant: presenting Agent 1&apos;s access token (the &quot;Agent 1
+        Token&quot; tab) succeeds; presenting Agent 2&apos;s access token (the &quot;Agent 2 Token&quot; tab) or
+        the raw service-client bootstrap token (&quot;Bootstrap&quot;) is rejected with a delegation-policy
+        error. The vaulted secret&apos;s delegation policy is anchored to a specific agent&apos;s chain of
+        custody, Okta&apos;s policy, not this app deciding who gets the secret. Full write-up in the
+        architecture doc linked above.
       </div>
       {!isReal && (
         <p className="text-2xs text-mute">Illustrative example — simulate a ticket to see your own run&apos;s real exchange.</p>
