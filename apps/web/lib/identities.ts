@@ -24,6 +24,24 @@ export const IDENTITIES: Record<string, Identity> = {
   "wlpEXAMPLEFulfillAg1": { id: "wlpEXAMPLEFulfillAg1", name: "Fulfillment Agent", kind: "AI agent", color: FULFILL_COLOR, isWorkloadPrincipal: true },
 };
 
+// The illustrative ids above cover the static diagrams and the cold-landing
+// fallback, but a REAL captured token carries this tenant's actual workload
+// principal ids, which identityForId wouldn't otherwise recognize — every
+// wlp/sub value would render as an opaque, unannotated string, exactly the
+// "which agent is this" confusion this file exists to prevent. These come
+// from env vars (not hardcoded) so the literal tenant-specific ids stay out
+// of the public git history, consistent with how the backend already handles
+// tenant-specific config. Harmless to leave unset: identityForId falls back
+// to "unrecognized" for anything not registered, same as today.
+const REAL_INTAKE_CLIENT_ID = process.env.NEXT_PUBLIC_INTAKE_SERVICE_CLIENT_ID;
+const REAL_TRIAGE_WLP = process.env.NEXT_PUBLIC_TRIAGE_WLP_ID;
+const REAL_RESOLUTION_WLP = process.env.NEXT_PUBLIC_RESOLUTION_WLP_ID;
+const REAL_FULFILLMENT_WLP = process.env.NEXT_PUBLIC_FULFILLMENT_WLP_ID;
+if (REAL_INTAKE_CLIENT_ID) IDENTITIES[REAL_INTAKE_CLIENT_ID] = { id: REAL_INTAKE_CLIENT_ID, name: "Intake Service", kind: "service client", color: SERVICE_COLOR, isWorkloadPrincipal: false };
+if (REAL_TRIAGE_WLP) IDENTITIES[REAL_TRIAGE_WLP] = { id: REAL_TRIAGE_WLP, name: "Triage Agent", kind: "AI agent", color: TRIAGE_COLOR, isWorkloadPrincipal: true };
+if (REAL_RESOLUTION_WLP) IDENTITIES[REAL_RESOLUTION_WLP] = { id: REAL_RESOLUTION_WLP, name: "Resolution Agent", kind: "AI agent", color: RESOLVE_COLOR, isWorkloadPrincipal: true };
+if (REAL_FULFILLMENT_WLP) IDENTITIES[REAL_FULFILLMENT_WLP] = { id: REAL_FULFILLMENT_WLP, name: "Fulfillment Agent", kind: "AI agent", color: FULFILL_COLOR, isWorkloadPrincipal: true };
+
 // Each agent's A2A custom authorization server → the identity it protects.
 // A real A2A token's `iss` is the target's CAS; `aud` is its resourceUrl.
 const ISSUER_AS_TO_IDENTITY: Record<string, string> = {
