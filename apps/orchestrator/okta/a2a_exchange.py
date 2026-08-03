@@ -128,8 +128,8 @@ def attempt_denied_write(
     caller_principal_id: str,
     caller_jwk: dict,
     okta_domain: str,
-    write_cas_issuer: str,
-    write_resource_url: str,
+    reachable_cas_issuer: str,
+    reachable_resource_url: str,
     write_scope: str,
 ) -> dict:
     """Deliberately attempt a write-scoped exchange as the READ-ONLY agent.
@@ -137,14 +137,22 @@ def attempt_denied_write(
     This is expected to FAIL, and the failure is the point: it is the demo's proof
     that least privilege is enforced by Okta rather than asserted by this app.
 
-    Two independent barriers make it fail, verified live against the tenant:
+    The request deliberately targets the resource the read-only agent IS allowed to
+    address, and asks for the write scope over it. That matters. Pointing at the
+    write lane instead fails with ``invalid_target`` ("'resource' is invalid or not
+    supported"), because the read-only agent has no connection to that resource at
+    all. True, but it reads like a misconfiguration. Asking for the wrong SCOPE over
+    a connection the agent legitimately holds returns the unambiguous answer:
 
-      1. The write scope exists ONLY on the write authorization server. Requesting
-         it anywhere else returns 400 invalid_scope ("One or more scopes are not
-         configured for the authorization server resource").
-      2. The read-only agent is not in the write AS's policy clients.include, so
-         asking that server directly returns 401 access_denied ("Policy evaluation
-         failed for this request").
+        400 invalid_scope
+        "The following scopes are not allowed for this request: [ticket.write]"
+
+    That is the sentence worth showing a viewer: this agent may use this connection,
+    and may not use it to write.
+
+    The scope list is enforced on the managed CONNECTION, not only on the target
+    authorization server's policy rule. Updating the authorization server alone is
+    not sufficient, which is a real trap when configuring this.
 
     Okta does not down-scope a token-exchange request: an ungrantable scope fails
     the WHOLE request rather than yielding the grantable subset. So there is no
@@ -161,8 +169,8 @@ def attempt_denied_write(
             "subject_token": subject_token,
             "subject_token_type": SUBJECT_TYPE_ACCESS_TOKEN,
             "requested_token_type": REQUESTED_TYPE_ID_JAG,
-            "audience": write_cas_issuer,
-            "resource": write_resource_url,
+            "audience": reachable_cas_issuer,
+            "resource": reachable_resource_url,
             "scope": write_scope,
             "client_assertion_type": CLIENT_ASSERTION_TYPE,
             "client_assertion": assertion,

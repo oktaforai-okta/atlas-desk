@@ -98,6 +98,21 @@ def build_comment_prompt(title: str, body: str, department: str) -> str:
     )
 
 
+def _first_text(msg) -> str:
+    """Return the first text block's content.
+
+    Do not index content[0] blindly. Current models can return a ThinkingBlock as
+    the first content block, which has no .text attribute, and whether they do so
+    varies per request. Indexing [0] therefore fails intermittently rather than
+    consistently, which is the worst way for this to break.
+    """
+    for block in getattr(msg, "content", None) or []:
+        text = getattr(block, "text", None)
+        if isinstance(text, str) and text.strip():
+            return text
+    raise ClassificationError("model returned no text block")
+
+
 def _client():
     from anthropic import Anthropic
     # Pin to the real Anthropic API, ignore any ambient ANTHROPIC_BASE_URL (e.g. a proxy/gateway).
@@ -112,7 +127,7 @@ def classify(title: str, body: str, similar: Optional[List[str]] = None) -> dict
         model=MODEL, max_tokens=500,
         messages=[{"role": "user", "content": build_classify_prompt(title, body, similar)}],
     )
-    return parse_classification(msg.content[0].text)
+    return parse_classification(_first_text(msg))
 
 
 def draft_comments(title: str, body: str, department: str) -> List[str]:
@@ -120,7 +135,7 @@ def draft_comments(title: str, body: str, department: str) -> List[str]:
         model=MODEL, max_tokens=600,
         messages=[{"role": "user", "content": build_comment_prompt(title, body, department)}],
     )
-    text = msg.content[0].text.strip()
+    text = _first_text(msg).strip()
     if text.startswith("```"):
         text = text.strip("`")
         text = text[text.find("["): text.rfind("]") + 1]
@@ -154,7 +169,7 @@ def draft_resolution(title: str, body: str, department: str) -> str:
             model=MODEL, max_tokens=600,
             messages=[{"role": "user", "content": build_resolution_prompt(title, body, department)}],
         )
-        text = msg.content[0].text.strip()
+        text = _first_text(msg).strip()
         if text.startswith("```"):
             text = text.strip("`")
             text = text[text.find("{"): text.rfind("}") + 1]

@@ -509,8 +509,12 @@ async def _run_live(stream: EventStream, seed: int, inbound: Optional[dict] = No
     denial: dict = {}
     if t1 and a1_jwk:
         try:
+            # Target the resource Agent 1 CAN address, asking for the scope it
+            # cannot have. Pointing at the write lane instead yields invalid_target
+            # (no connection to that resource), which is true but reads like a
+            # config error rather than a permission refusal.
             denial = attempt_denied_write(t1, a1_id, a1_jwk, OKTA_DOMAIN,
-                                          write_cas_issuer, write_resource, WRITE_SCOPE)
+                                          read_cas_issuer, read_resource, WRITE_SCOPE)
         except Exception:
             log.exception("denial probe raised")
     was_denied = bool(denial.get("_denied"))
