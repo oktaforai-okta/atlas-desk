@@ -1,76 +1,118 @@
 # Atlas Service Desk
 
-**Atlas Service Desk** is a demo of an autonomous IT service desk secured end-to-end by Okta identity. Three AI agents (Triage, Resolution, Fulfillment) triage, resolve, and file real Jira issues with zero humans in the loop, while every hand-off between them is a cryptographically verifiable, Okta-issued token.
+**Two AI agents work an IT ticket. One can read. One can write. Okta decides which, and refuses when the read-only agent asks for more.**
 
-It exists to answer one question concretely: **when an AI agent acts, and hands one task to another AI agent, who is accountable, and can you prove it?**
+Atlas Service Desk is a working demo of agent-to-agent delegation secured end to end by Okta identity. It triages, resolves, and files real Jira issues with no human in the loop, and it makes the authorization visible at every step: each agent's capability is a real OAuth scope in a real Okta-issued token, and the moment an agent over-reaches, Okta says no.
 
-## What it demonstrates
+It exists to answer one question concretely: **when an AI agent acts, and hands work to another AI agent, who is accountable, what were they allowed to do, and can you prove it?**
 
-- **Workload identity.** Each agent is a first-class Okta identity with its own key pair (a "workload principal"), not a shared API key copy-pasted into three places.
-- **Agent-to-agent (A2A) delegation.** One agent invoking another produces a real Okta-issued token (an ID-JAG) whose `act` claim nests every actor in the chain, a chain of custody, not a log line someone could have faked after the fact.
-- **No human in the loop, and no silent bypass either.** The pipeline never pauses for a person to click "approve." Okta's Privileged Access vault still requires *a* subject to release a downstream credential (that's how RFC 8693 token exchange works); this demo proves that subject can be the agent's own delegated authority, not a human's, see [the vault section of the architecture doc](docs/ARCHITECTURE.md#the-vaulted-secret-release-a-machine-authorizes-itself) for exactly how.
-- **Real outcomes.** Tickets are actually filed in a real Jira Cloud project, actually auto-resolved (roughly half the time, randomly) or actually routed to a team.
+## The thing worth looking at
 
-## Try it
+Most agent demos show that Agent A can call Agent B. That is easy, and it proves very little. The interesting question is what each agent is *not* allowed to do.
 
-Live demo: **https://atlas-desk.vercel.app**, click "Simulate inbound ticket" and watch the pipeline run for real.
+So this demo includes a step that **fails on purpose**:
 
-Or run it locally, see [Local development](#local-development) below.
+```
+Agent 1 asks Okta for ticket.write
+  -> HTTP 401  access_denied
+     "Policy evaluation failed for this request, please check the policy configurations."
+```
 
-## How it works
+That is a real response from a real Okta tenant, surfaced verbatim in the UI, copyable. Least privilege here is not a sentence in a README. It is an HTTP status code you can reproduce.
 
-![System architecture](docs/diagrams/system-architecture.drawio.png)
+## Live demo
 
-A browser talks to a Next.js frontend, which streams the pipeline (SSE) from a FastAPI orchestrator. The orchestrator is the only thing that talks to Okta, Claude, and Jira, no credentials of any kind live in the frontend.
+**https://atlas-desk.vercel.app**
 
-![Pipeline sequence: nine steps, token movement highlighted](docs/diagrams/pipeline-sequence.drawio.png)
+Click "Simulate inbound ticket" and watch it run. Then open **Chain of custody** and copy any token into [jwt.io](https://jwt.io). Check the `scp` claim against what the page says that agent was allowed to do, and the `act` claim for who acted on whose authority.
 
-The full technical walkthrough, including the exact token-exchange mechanics and two things this repo is honest about *not* getting perfect yet, is in **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)**.
+Nothing in this app asks you to trust it. Every credential it issues is exportable and independently verifiable against Okta's published signing keys.
 
-Want to build this pattern in your own Okta tenant? **[docs/OKTA_SETUP.md](docs/OKTA_SETUP.md)** is a from-scratch configuration guide, written generically, no tenant-specific values, covering exactly which Okta objects you need and why.
+## How the CRUD boundary works
+
+Two Okta workload principals, three authorization servers, two scopes.
+
+| Lane | What it is | Scope | Who is authorized |
+|---|---|---|---|
+| Read | Agent 1's own authorization server | `ticket.read` | Intake Service, Agent 1 |
+| Delegation | The hand-off boundary | `ticket.read` | Intake Service, Agent 1 |
+| **Write** | The privileged authorization server | `ticket.write` | **Agent 2 only** |
+
+Agent 1 cannot obtain `ticket.write`, for two independent reasons:
+
+1. **It is not an authorized client on the write authorization server.** Asking there returns `401 access_denied`.
+2. **The write scope does not exist on the servers where Agent 1 *is* authorized.** Asking there returns `400 invalid_scope`.
+
+And Okta does not down-scope a token-exchange request: an ungrantable scope fails the *whole* request rather than quietly issuing the grantable subset. There is no partial success to accidentally accept.
+
+Agent 1 is not powerless, though. It can **delegate** to an agent that does have write access, and the resulting token's `act` claim records that Agent 1 initiated the request. So the write remains attributable to the agent that asked for it, even though that agent could never have performed it. That is the pattern worth stealing.
+
+## The pipeline
+
+```
+inbound
+  -> Agent 1 granted ticket.read
+  -> Agent 1 reads Jira for duplicates          (a real GET, scope-gated)
+  -> Claude classifies and judges self-serviceability
+  -> Agent 1 attempts a write, Okta refuses     (the proof)
+  -> Agent 1 delegates to Agent 2               (act chain begins)
+  -> Agent 2 obtains ticket.write               (capability change)
+  -> Agent 2 releases the Jira credential from the OPA vault
+  -> Agent 2 writes to Jira
+```
+
+Whether a ticket auto-resolves is **Claude's judgment, not a coin flip**. A Slack audio problem gets fixed with self-service instructions and closed. A laptop that will not power on gets routed to a human, because no amount of instructions will fix hardware. The model is asked to be honest about the difference, and to default to routing when unsure.
+
+## What Okta provides
+
+- **Identity.** Each agent is a first-class workload principal with its own key pair, owner, and lifecycle. Not a shared API key copy-pasted into two places.
+- **Authorization.** Capability is a scope, granted by policy per authorization server. Changing what an agent may do is a policy edit, not a code deploy.
+- **Runtime.** The one credential that reaches production (a Jira API token) is vaulted in Okta Privileged Access and released just in time, in exchange for the agent's own delegated authority. Nothing static lives in agent code.
+- **Governance.** Every hop, including the refused one, is a real event in the Okta System Log attributable to a named identity. Deactivate an agent and the next hand-off provably fails.
+
+## Documentation
+
+- **[docs/WHY-THIS-MATTERS.md](docs/WHY-THIS-MATTERS.md)** start here if you are not going to build it. What breaks without this, in plain terms.
+- **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** the technical walkthrough: exact token mechanics, the vaulted-secret release, and what this repo is honest about not doing yet.
+- **[docs/OKTA_SETUP.md](docs/OKTA_SETUP.md)** a from-scratch build checklist for your own tenant, written generically with no tenant-specific values.
+- **[DEPLOY.md](DEPLOY.md)** Render plus Vercel.
 
 ## Tech stack
 
 | | |
 |---|---|
-| Frontend | Next.js 14 (App Router), React 18, TypeScript, Tailwind CSS, D3, Framer Motion |
-| Backend | FastAPI (Python), `python-jose` + `cryptography` for token signing/decoding |
-| AI | Anthropic Claude, ticket classification and drafting |
-| Identity | Okta Workload Identities, Okta Agent-to-Agent (A2A), Okta Privileged Access |
-| Downstream system | Jira Cloud (REST API v3) |
+| Frontend | Next.js 14 (App Router), React 18, TypeScript, Tailwind, D3, Framer Motion |
+| Backend | FastAPI (Python), `python-jose` + `cryptography` for token signing |
+| Identity | Okta workload principals, custom authorization servers, RFC 8693 token exchange, ID-JAG, Okta Privileged Access |
+| AI | Claude (classification, self-serviceability judgment, resolution drafting) |
+| Downstream | Jira Cloud REST v3 |
 
 ## Local development
 
 ```bash
-# Backend
+# backend
 cd apps/orchestrator
-python3 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-uvicorn main:app --reload --port 8080
-```
+python3 -m venv .venv && ./.venv/bin/pip install -r requirements.txt
+./.venv/bin/python -m uvicorn main:app --port 8080
 
-Without Okta/Jira/Claude credentials configured, the backend runs in **demo mode**: the identical event sequence, on safe canned ticket data, with zero external calls. This is enough to see the whole UI and flow working.
-
-```bash
-# Frontend, in a second terminal
+# frontend, in another shell
 cd apps/web
 npm install
-npm run dev   # http://localhost:3002
+NEXT_PUBLIC_ORCHESTRATOR_URL=http://localhost:8080 npm run dev
 ```
 
-Set `NEXT_PUBLIC_ORCHESTRATOR_URL` in `apps/web/.env.local` to point the frontend at your local orchestrator (`http://localhost:8080`).
+With no Okta or Jira credentials configured the orchestrator runs a **demo path**: the same event sequence and the same token *shapes*, on unsigned `alg=none` tokens whose signature segment literally reads `DEMO-UNSIGNED-NOT-A-REAL-OKTA-TOKEN`. `GET /healthz` reports which mode you are in and lists exactly which environment variables are missing.
 
-To run it fully **live** (real Okta, real Claude, real Jira), see the full environment variable table and setup checklist in [docs/OKTA_SETUP.md](docs/OKTA_SETUP.md).
+The header pill reads Live only when the orchestrator itself reports live. It is not driven by whether a URL happens to be configured.
 
-## Deploying
-
-This instance runs on Vercel (frontend) + Render (backend). See [DEPLOY.md](DEPLOY.md) for the operational runbook for that specific hosting setup.
+To run fully live against your own tenant, see the environment table in [docs/OKTA_SETUP.md](docs/OKTA_SETUP.md).
 
 ## Honest limitations
 
-This is a demo built to prove an identity pattern, not a hardened production service:
+This is a demo built to prove an identity pattern, not a hardened production service.
 
-- CORS on the orchestrator is currently wide open (`allow_origins: *`).
-- The orchestrator decodes claims from the tokens Okta hands back to it, but doesn't independently re-verify their signatures. Okta is treated as an already-authenticated first party in this flow, a reasonable simplification here, not a pattern to copy blindly into a context where token verification actually matters.
-- If the Okta Privileged Access vault path isn't fully configured, the app falls back to a static environment-variable credential rather than failing closed, and the UI is explicit about which path actually fired (different narration, different System Log event ID or none at all). It never fabricates a vault event that didn't happen. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#honesty-by-design-the-demo-mode--fallback-rule) for the full rule.
-- Only two of the three narrated agent identities are currently distinct in the backend implementation. See the callout in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#current-implementation-notes).
+- **Two agents, not three.** Earlier versions of this demo narrated three agents while using two real Okta identities. That gap is now closed by describing what actually exists: two workload principals, split by capability. A third workload principal still exists in the reference tenant and is unused.
+- **One vaulted credential, not two.** The Jira credential released from the OPA vault is write-capable and belongs to Agent 2. Agent 1's read currently uses a configured environment credential rather than a separate read-only vaulted secret. The *authorization* boundary is real and enforced by Okta; the credential separation is not yet, and vaulting a second read-only secret is the clean follow-up.
+- **The orchestrator does not re-verify signatures** on tokens Okta just handed it over TLS. It treats Okta as an already-authenticated first party. A standalone resource server should verify against the issuer's JWKS; `okta/scope_guard.py` says so where it matters.
+- **`/api/run` is rate limited, not authenticated.** It costs real money and has real side effects, so it enforces a per-IP limit and a CORS origin allowlist. Neither is authentication. Do not expose an endpoint shaped like this without auth in a context where abuse matters.
+- **If the vault path is not configured** the app falls back to an environment credential rather than failing closed, and the UI narrates the degraded path differently and emits no System Log id for an event that did not happen. It never fabricates a vault event. See [the honesty rule](docs/ARCHITECTURE.md#honesty-by-design).

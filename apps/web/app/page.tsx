@@ -1,12 +1,12 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Plus, ShieldCheck, User, CircleDot, Sparkles, Forward, MailCheck, KeyRound } from "lucide-react";
 import AgentFlowGraph from "@/components/AgentFlowGraph";
 import TicketActivity from "@/components/TicketActivity";
 import {
-  runPipeline, nextTicket, captureTokenClaims, captureRawTokens, SEED_QUEUE, ORCH,
+  runPipeline, nextTicket, captureRun, SEED_QUEUE, ORCH,
   type ActivityEvent, type Ticket,
 } from "@/lib/events";
 
@@ -24,14 +24,30 @@ function displayMeta(t: Ticket): { label: string; dot: string; text: string } {
   return STATUS_META[t.status];
 }
 
+// "Live" must mean the orchestrator says it is live, not merely that we were
+// handed a URL. Previously this pill went green whenever the env var was set,
+// so a deployment pointed at a demo-mode backend still advertised Live.
+type Mode = "checking" | "live" | "demo" | "unreachable";
+
 export default function ServiceDesk() {
   const [queue, setQueue] = useState<Ticket[]>(SEED_QUEUE);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [events, setEvents] = useState<ActivityEvent[]>([]);
   const [running, setRunning] = useState(false);
+  const [mode, setMode] = useState<Mode>(ORCH ? "checking" : "demo");
   const abort = useRef<AbortController | null>(null);
 
   const selected = queue.find((t) => t.id === selectedId) || null;
+
+  useEffect(() => {
+    if (!ORCH) return;
+    let alive = true;
+    fetch(`${ORCH}/healthz`)
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+      .then((j) => { if (alive) setMode(j?.mode === "live" ? "live" : "demo"); })
+      .catch(() => { if (alive) setMode("unreachable"); });
+    return () => { alive = false; };
+  }, []);
 
   async function simulateInbound() {
     if (running) return;
@@ -45,32 +61,55 @@ export default function ServiceDesk() {
     setRunning(true);
     setQueue((q) => q.map((x) => (x.id === t.id ? { ...x, status: "working" } : x)));
     // Kept alongside React state (which is a stale closure inside this async
-    // function by the time the stream closes) so captureRawTokens sees every
-    // event from this run, not just whatever `events` last was on render.
+    // function by the time the stream closes) so captureRun sees every event
+    // from this run, not just whatever `events` last was on render.
     const collected: ActivityEvent[] = [];
-    const res = await runPipeline(t, (e) => {
-      collected.push(e);
-      setEvents((prev) => [...prev, e]);
-      captureTokenClaims(e);
-    }, ac.signal);
-    captureRawTokens(collected); // bridges this run's raw JWTs over to /tokens
-    setQueue((q) =>
-      q.map((x) =>
-        x.id === t.id
-          ? {
-              ...x,
-              status: res.autoResolved ? "resolved" : "working",
-              team: res.team || x.team,
-              issueKey: res.issueKey,
-              issueUrl: res.issueUrl,
-              outcome: res.autoResolved ? "auto_resolved" : "routed",
-              resolution: res.resolution,
-            }
-          : x,
-      ),
-    );
-    setRunning(false);
+    try {
+      const res = await runPipeline(t, (e) => {
+        collected.push(e);
+        setEvents((prev) => [...prev, e]);
+      }, ac.signal);
+      captureRun(collected); // bridges this run's credentials over to /tokens
+      // Only label an outcome when the run actually produced one. Setting
+      // "routed" unconditionally rendered "Routed to  for a specialist" with an
+      // empty team whenever the backend failed.
+      const done = !res.failed && (res.autoResolved !== undefined || !!res.issueKey);
+      setQueue((q) =>
+        q.map((x) =>
+          x.id === t.id
+            ? {
+                ...x,
+                status: res.autoResolved ? "resolved" : "working",
+                team: res.team || x.team,
+                issueKey: res.issueKey,
+                issueUrl: res.issueUrl,
+                outcome: done ? (res.autoResolved ? "auto_resolved" : "routed") : undefined,
+                resolution: res.resolution,
+              }
+            : x,
+        ),
+      );
+    } catch (err) {
+      if (!ac.signal.aborted) {
+        setEvents((prev) => [...prev, {
+          step: "error", actor: "Atlas", actorKind: "okta", status: "error", primary: true,
+          plain: "Could not reach the orchestrator",
+          tech: err instanceof Error ? err.message : String(err),
+        }]);
+      }
+    } finally {
+      // Always re-enable the control. Without this, one failed fetch left the
+      // primary button stuck on "Processing…" until a full page reload.
+      setRunning(false);
+    }
   }
+
+  const MODE_PILL: Record<Mode, { label: string; cls: string; dot: string }> = {
+    checking: { label: "Checking…", cls: "border-line bg-raised text-mute", dot: "bg-mute" },
+    live: { label: "Live", cls: "border-ok/30 bg-ok/10 text-ok", dot: "bg-ok live-dot" },
+    demo: { label: "Demo", cls: "border-line bg-raised text-mute", dot: "bg-mute" },
+    unreachable: { label: "Offline", cls: "border-bad/30 bg-bad/10 text-bad", dot: "bg-bad" },
+  };
 
   return (
     <div className="flex h-screen flex-col">
@@ -79,11 +118,9 @@ export default function ServiceDesk() {
         <div>
           <div className="flex items-center gap-2.5">
             <h1 className="text-[17px] font-semibold text-bright">Service Desk</h1>
-            <span className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-2xs ${
-              ORCH ? "border-ok/30 bg-ok/10 text-ok" : "border-line bg-raised text-mute"
-            }`}>
-              <span className={`h-1.5 w-1.5 rounded-full ${ORCH ? "bg-ok live-dot" : "bg-mute"}`} />
-              {ORCH ? "Live" : "Demo"}
+            <span className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-2xs ${MODE_PILL[mode].cls}`}>
+              <span className={`h-1.5 w-1.5 rounded-full ${MODE_PILL[mode].dot}`} />
+              {MODE_PILL[mode].label}
             </span>
           </div>
           <p className="mt-0.5 text-2xs text-mute">Autonomous triage &amp; resolution, secured by Okta</p>

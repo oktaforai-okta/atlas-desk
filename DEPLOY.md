@@ -36,7 +36,7 @@ The frontend calls the orchestrator over SSE. Wire them by setting the Render UR
    | `JIRA_ASSIGNEE_EMAIL` | The shared account you want every case assigned to |
    | `ANTHROPIC_API_KEY` | Your Claude API key |
 
-   Non-secret vars (`JIRA_PROJECT_KEY`, `AUTO_RESOLVE_RATE`, `A2A_SCOPE`, etc.) are already baked into `render.yaml`.
+   Non-secret vars (`JIRA_PROJECT_KEY`, `A2A_READ_SCOPE`, `A2A_WRITE_SCOPE`) are already baked into `render.yaml`.
 3. Deploy. When it's up, hit `https://<service>.onrender.com/healthz`, it should return `{"ok":true,"mode":"live"}` once every required var is set (`"demo"` means one still is missing).
 4. Copy the service URL (e.g. `https://atlas-orchestrator-xxxx.onrender.com`).
 
@@ -58,7 +58,7 @@ Open the Vercel URL, the header pill should read **Live** (green). Click **Simul
 
 ## Notes
 
-- CORS on the orchestrator is currently `*`, so any frontend origin works out of the box. To tighten later, restrict `allow_origins` in `apps/orchestrator/main.py` to your actual frontend domain.
-- Render Starter is always-on (no cold starts). The health check is `/healthz`.
-- `AUTO_RESOLVE_RATE` (Render env, default `0.5`) tunes how often cases auto-resolve; set `1.0` or `0.0` to force one outcome for a scripted demo.
+- CORS on the orchestrator is an allowlist (`ALLOWED_ORIGINS` plus `ALLOWED_ORIGIN_REGEX`, which by default covers the deployed frontends and any localhost port). `/api/run` is also per-IP rate limited via `RATE_LIMIT_RUNS` / `RATE_LIMIT_WINDOW_SEC`, because it costs Claude tokens and writes real Jira issues. Neither of these is authentication.
+- Render Starter is always-on (no cold starts). The health check is `/healthz`, which reports `live` only when every variable the live path dereferences is set, and lists the missing ones otherwise.
+- Whether a case auto-resolves is Claude's judgment based on the ticket, not a configured rate. There is no `AUTO_RESOLVE_RATE`; self-serviceable problems get resolved and physical or entitlement problems get routed.
 - Secrets never leave the dashboards, `.secrets/`, `.env*` are git-ignored, and every tenant-specific value (not just the true secrets) is `sync:false` in `render.yaml`.

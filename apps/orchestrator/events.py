@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
 from dataclasses import dataclass, field
 from typing import Optional
 
@@ -57,6 +58,8 @@ class EventStream:
         self._q: asyncio.Queue = asyncio.Queue()
 
     async def emit(self, e: ActivityEvent) -> None:
+        if e.ts is None:
+            e.ts = time.time()  # stamped here so no caller can forget it
         await self._q.put(e)
 
     async def close(self) -> None:

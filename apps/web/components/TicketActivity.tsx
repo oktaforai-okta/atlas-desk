@@ -1,28 +1,35 @@
 "use client";
 
 import { motion, AnimatePresence } from "framer-motion";
-import { latestByStep, type ActivityEvent } from "@/lib/events";
+import { latestByStep, type ActivityEvent, type ActorKind } from "@/lib/events";
 
-const ACTOR_COLOR: Record<string, string> = {
+// Typed against ActorKind, not Record<string,string>: the loose type is why the
+// missing `fulfill` key went unnoticed and rendered `class="rounded-full undefined"`
+// on every real run.
+const ACTOR_COLOR: Record<ActorKind, string> = {
   intake: "bg-mute",
   triage: "bg-triage",
   resolve: "bg-resolve",
+  fulfill: "bg-fulfill",
   okta: "bg-accent",
 };
 
-// Generic, per-step display label — same rule as the flow diagrams: static
-// text stays "Agent N," the real name only ever reveals via the diagrams'
-// hover state or the Token Inspector, never here in the always-visible feed.
+// Per-step display label. Agents are named by number in the always-visible feed;
+// their workload principal ids appear on the chain-of-custody page, read off the
+// real tokens rather than asserted here.
 const STEP_ACTOR_LABEL: Record<string, string> = {
   inbound: "Intake",
-  intake_auth: "Agent 1",
-  intake_classify: "Agent 1",
-  a2a_exchange: "Agent 1 → Agent 2",
-  devops_draft: "Agent 2",
-  a2a_fulfillment: "Agent 2 → Agent 3",
-  opa_vault: "Agent 3",
-  jira_write: "Agent 3",
+  read_grant: "Agent 1",
+  jira_read: "Agent 1",
+  classify: "Agent 1",
+  write_denied: "Agent 1",
+  a2a_delegate: "Agent 1 → Agent 2",
+  write_grant: "Agent 2",
+  draft: "Agent 2",
+  opa_vault: "Agent 2",
+  jira_write: "Agent 2",
   done: "Atlas",
+  error: "Atlas",
 };
 
 export default function TicketActivity({ events }: { events: ActivityEvent[] }) {
@@ -43,7 +50,7 @@ export default function TicketActivity({ events }: { events: ActivityEvent[] }) 
         <AnimatePresence initial={false}>
           {rows.map((e, i) => {
             const running = e.status === "running";
-            const handoff = e.step === "a2a_exchange";
+            const handoff = e.step === "a2a_delegate";
             return (
               <motion.div
                 key={e.step}

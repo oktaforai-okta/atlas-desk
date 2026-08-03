@@ -1,11 +1,10 @@
 // Pure derivation of AgentFlowGraph's visual state from the real event stream.
-// No React, no DOM, unit-testable with plain `node`.
+// No React, no DOM.
 //
-// The chain is now three agents: Intake Service (service, bootstrap) ->
-// Atlas Triage -> Atlas Resolution -> Atlas Fulfillment, with Okta brokering
-// each agent-to-agent hop (id_jag). The SECOND hop (resolveToFulfillment) is
-// the one whose token nests BOTH agent workload principals in its act claim,
-// that's the chain-of-custody source.
+// The chain is TWO agents, not three: Intake Service bootstraps, Agent 1 reads,
+// Agent 2 writes. The interesting edge is agent1 -> agent2, because that is
+// where the capability changes from ticket.read to ticket.write, and the
+// interesting NON-edge is agent1 -> write, which Okta refuses.
 
 import { type ActivityEvent, latestByStep } from "./events";
 
@@ -13,35 +12,44 @@ export type FlowStatus = "idle" | "running" | "ok" | "error";
 
 export interface FlowEdgeState {
   status: FlowStatus;
+  scope: string | null;
   claims: Record<string, unknown> | null;
   systemLogId: string | null;
 }
 
 export interface AgentFlowState {
-  nodes: { intake: FlowStatus; triage: FlowStatus; resolve: FlowStatus; fulfill: FlowStatus; jira: FlowStatus };
+  nodes: { intake: FlowStatus; agent1: FlowStatus; agent2: FlowStatus; jira: FlowStatus };
   edges: {
-    intakeToTriage: FlowEdgeState;
-    triageToResolve: FlowEdgeState;      // hop 1, one agent in act
-    resolveToFulfillment: FlowEdgeState; // hop 2, TWO agents in act (chain of custody)
-    fulfillmentToJira: FlowEdgeState;
+    intakeToAgent1: FlowEdgeState;  // bootstrap, ticket.read
+    agent1ToAgent2: FlowEdgeState;  // delegation, act chain starts here
+    agent2ToJira: FlowEdgeState;    // the write
   };
+  /** Agent 1's refused write attempt. Rendered as a struck-through branch. */
+  writeDenied: { attempted: boolean; denied: boolean; error: string | null };
   vaultBadge: FlowStatus;
+  readCount: number | null;
   complete: boolean;
   errorMessage: string | null;
 }
 
+/** Fold several steps into one status.
+ *
+ *  Reads the last PRESENT step, not the last slot. Previously this filtered for
+ *  emptiness and error but then indexed the unfiltered array, so a run missing
+ *  its final step pinned the node to "running" forever. */
 function foldStatus(steps: Array<ActivityEvent | undefined>): FlowStatus {
   const present = steps.filter((s): s is ActivityEvent => s !== undefined);
   if (present.length === 0) return "idle";
   if (present.some((s) => s.status === "error")) return "error";
-  const last = steps[steps.length - 1];
-  return last?.status === "ok" ? "ok" : "running";
+  return present[present.length - 1].status === "ok" ? "ok" : "running";
 }
 
 function edgeFrom(e: ActivityEvent | undefined): FlowEdgeState {
+  const scope = e?.data?.scope;
   return {
     status: foldStatus([e]),
-    claims: e?.token_claims ?? null, // never fabricate; only present when the real token arrived
+    scope: typeof scope === "string" ? scope : null,
+    claims: e?.token_claims ?? null, // never fabricate; only when the real token arrived
     systemLogId: e?.system_log_id ?? null,
   };
 }
@@ -51,46 +59,59 @@ const forceError = (s: FlowStatus): FlowStatus => (s === "running" ? "error" : s
 export function deriveAgentFlowState(events: ActivityEvent[]): AgentFlowState {
   const by = latestByStep(events);
   const inbound = by.get("inbound");
-  const intakeAuth = by.get("intake_auth");
-  const intakeClassify = by.get("intake_classify");
-  const a2a = by.get("a2a_exchange");
-  const draft = by.get("devops_draft");
-  const fulfillment = by.get("a2a_fulfillment");
+  const readGrant = by.get("read_grant");
+  const jiraRead = by.get("jira_read");
+  const classify = by.get("classify");
+  const denied = by.get("write_denied");
+  const delegate = by.get("a2a_delegate");
+  const writeGrant = by.get("write_grant");
+  const draft = by.get("draft");
   const vault = by.get("opa_vault");
   const jiraWrite = by.get("jira_write");
   const done = by.get("done");
   const failure = by.get("error");
 
+  const similar = jiraRead?.data?.similar;
+
   const nodes = {
     intake: foldStatus([inbound]),
-    triage: foldStatus([intakeAuth, intakeClassify]),
-    resolve: foldStatus([draft]),
-    fulfill: foldStatus([fulfillment, jiraWrite]),
+    agent1: foldStatus([readGrant, jiraRead, classify]),
+    agent2: foldStatus([writeGrant, draft, jiraWrite]),
     jira: foldStatus([jiraWrite]),
   };
   const edges = {
-    intakeToTriage: edgeFrom(intakeAuth),
-    triageToResolve: edgeFrom(a2a),
-    resolveToFulfillment: edgeFrom(fulfillment),
-    fulfillmentToJira: edgeFrom(jiraWrite),
+    intakeToAgent1: edgeFrom(readGrant),
+    agent1ToAgent2: edgeFrom(delegate),
+    agent2ToJira: edgeFrom(jiraWrite),
   };
-  const vaultBadge = foldStatus([vault]);
+
+  const writeDenied = {
+    attempted: denied !== undefined,
+    denied: denied?.data?.denied === true,
+    error: typeof denied?.data?.error === "string" ? denied.data.error : null,
+  };
+
+  const base = {
+    edges,
+    writeDenied,
+    vaultBadge: foldStatus([vault]),
+    readCount: Array.isArray(similar) ? similar.length : null,
+  };
 
   if (!failure) {
-    return { nodes, edges, vaultBadge, complete: done?.status === "ok", errorMessage: null };
+    return { ...base, nodes, complete: done?.status === "ok", errorMessage: null };
   }
   return {
+    ...base,
     nodes: {
-      intake: forceError(nodes.intake), triage: forceError(nodes.triage), resolve: forceError(nodes.resolve),
-      fulfill: forceError(nodes.fulfill), jira: forceError(nodes.jira),
+      intake: forceError(nodes.intake), agent1: forceError(nodes.agent1),
+      agent2: forceError(nodes.agent2), jira: forceError(nodes.jira),
     },
     edges: {
-      intakeToTriage: { ...edges.intakeToTriage, status: forceError(edges.intakeToTriage.status) },
-      triageToResolve: { ...edges.triageToResolve, status: forceError(edges.triageToResolve.status) },
-      resolveToFulfillment: { ...edges.resolveToFulfillment, status: forceError(edges.resolveToFulfillment.status) },
-      fulfillmentToJira: { ...edges.fulfillmentToJira, status: forceError(edges.fulfillmentToJira.status) },
+      intakeToAgent1: { ...edges.intakeToAgent1, status: forceError(edges.intakeToAgent1.status) },
+      agent1ToAgent2: { ...edges.agent1ToAgent2, status: forceError(edges.agent1ToAgent2.status) },
+      agent2ToJira: { ...edges.agent2ToJira, status: forceError(edges.agent2ToJira.status) },
     },
-    vaultBadge: forceError(vaultBadge),
     complete: false,
     errorMessage: failure.plain,
   };

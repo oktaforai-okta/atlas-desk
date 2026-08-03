@@ -1,47 +1,47 @@
 "use client";
 
-// The hero: a live, three-agent delegation flow.
+// The hero: a live two-agent delegation flow, with the capability boundary drawn.
 //
-//   Intake Service (service, bootstrap) -> Agent 1 -> Agent 2 -> Agent 3 -> Jira
+//   Intake Service ──ticket.read──▶ Agent 1 ──delegate──▶ Agent 2 ──ticket.write──▶ Jira
+//                                     │
+//                                     ╳  ticket.write refused by Okta
 //
-// Both agent-to-agent hops are brokered by Okta (id_jag), shown by the Okta
-// node + its two connectors. Every pulse/particle fires only off a real
-// ActivityEvent status transition (verified against the Okta log). Static
-// labels stay generic on purpose (Agent 1/2/3), hover a node to reveal its
-// real name alongside its workload principal id. Deep chain-of-custody /
-// raw-token inspection lives on a separate page (/tokens, the Token
-// Inspector), not duplicated here.
+// The dead-end branch under Agent 1 is the most important thing on the diagram:
+// it is the capability Agent 1 asked for and did not get. Okta brokers the
+// agent-to-agent hop (id-jag), shown by the Okta node and its connector.
+//
+// Every pulse fires off a real ActivityEvent status transition. Raw tokens live
+// on /tokens, not duplicated here.
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { motion, useReducedMotion } from "framer-motion";
-import { Inbox, Bot, SquareKanban, ShieldCheck, KeyRound } from "lucide-react";
+import { Inbox, Bot, SquareKanban, ShieldCheck, KeyRound, ShieldOff } from "lucide-react";
 import { linkHorizontal, linkVertical, type DefaultLinkObject } from "d3-shape";
 import { deriveAgentFlowState, type FlowStatus } from "@/lib/agentFlow";
-import { TRIAGE_COLOR, RESOLVE_COLOR, FULFILL_COLOR } from "@/lib/identities";
+import { TRIAGE_COLOR, RESOLVE_COLOR, FULFILL_COLOR, VAULT_COLOR } from "@/lib/identities";
 import { latestByStep, type ActivityEvent } from "@/lib/events";
 
 const NEUTRAL = "#8B96A8";
 const OKTA = "#93B4FF";
-const VAULT = "#64BBC8";
 const WARN = "#F2B450";
 const BAD = "#FF6168";
 
-// ---- fixed geometry (viewBox 0 0 1200 344) ----
-const LANE = 202;
-const NW = 158;
-const NH = 82;
-type NodeKey = "intake" | "triage" | "resolve" | "fulfill" | "jira" | "okta" | "vault";
-const NODES: Record<NodeKey, { cx: number; cy: number; w: number; h: number; color: string; name: string; realName?: string; kind: string; Icon: typeof Bot }> = {
-  intake: { cx: 100, cy: LANE, w: NW, h: NH, color: NEUTRAL, name: "Intake", kind: "external system", Icon: Inbox },
-  // Static labels stay generic ("Agent N"); the real name reveals only alongside
-  // the workload principal id on hover (see NODE_DETAIL below) — same rule as
-  // the architecture page's fabric diagram.
-  triage: { cx: 350, cy: LANE, w: NW, h: NH, color: TRIAGE_COLOR, name: "Agent 1", realName: "Triage", kind: "AI Agent", Icon: Bot },
-  resolve: { cx: 600, cy: LANE, w: NW, h: NH, color: RESOLVE_COLOR, name: "Agent 2", realName: "Resolution", kind: "AI Agent", Icon: Bot },
-  fulfill: { cx: 850, cy: LANE, w: NW, h: NH, color: FULFILL_COLOR, name: "Agent 3", realName: "Fulfillment", kind: "AI Agent", Icon: Bot },
-  jira: { cx: 1100, cy: LANE, w: NW, h: NH, color: NEUTRAL, name: "Jira", kind: "IT Service Desk", Icon: SquareKanban },
-  okta: { cx: 600, cy: 58, w: 192, h: 56, color: OKTA, name: "Okta", kind: "ID-JAG · both hops", Icon: ShieldCheck },
-  vault: { cx: 850, cy: 302, w: 160, h: 52, color: VAULT, name: "OPA Vault", kind: "vaulted secret", Icon: KeyRound },
+// ---- fixed geometry (viewBox 0 0 1200 360) ----
+const LANE = 188;
+const NW = 168;
+const NH = 84;
+type NodeKey = "intake" | "agent1" | "agent2" | "jira" | "okta" | "vault" | "denied";
+const NODES: Record<NodeKey, {
+  cx: number; cy: number; w: number; h: number; color: string;
+  name: string; kind: string; Icon: typeof Bot;
+}> = {
+  intake: { cx: 108, cy: LANE, w: NW, h: NH, color: NEUTRAL, name: "Intake", kind: "external system", Icon: Inbox },
+  agent1: { cx: 392, cy: LANE, w: NW, h: NH, color: TRIAGE_COLOR, name: "Agent 1", kind: "read only", Icon: Bot },
+  agent2: { cx: 706, cy: LANE, w: NW, h: NH, color: FULFILL_COLOR, name: "Agent 2", kind: "write capable", Icon: Bot },
+  jira: { cx: 1010, cy: LANE, w: NW, h: NH, color: NEUTRAL, name: "Jira", kind: "IT Service Desk", Icon: SquareKanban },
+  okta: { cx: 549, cy: 52, w: 196, h: 54, color: OKTA, name: "Okta", kind: "brokers the hand-off", Icon: ShieldCheck },
+  vault: { cx: 880, cy: 316, w: 168, h: 52, color: VAULT_COLOR, name: "OPA Vault", kind: "vaulted secret", Icon: KeyRound },
+  denied: { cx: 392, cy: 316, w: 196, h: 52, color: BAD, name: "write refused", kind: "by Okta policy", Icon: ShieldOff },
 };
 
 const H = linkHorizontal();
@@ -49,20 +49,15 @@ const V = linkVertical();
 const linkPath = (gen: typeof H, s: [number, number], t: [number, number]) =>
   gen({ source: s, target: t } as unknown as DefaultLinkObject) ?? "";
 const N = NODES;
-const EDGE_INTAKE = linkPath(H, [N.intake.cx + NW / 2, LANE], [N.triage.cx - NW / 2, LANE]);
-const EDGE_A2A1 = linkPath(H, [N.triage.cx + NW / 2, LANE], [N.resolve.cx - NW / 2, LANE]);
-const EDGE_A2A2 = linkPath(H, [N.resolve.cx + NW / 2, LANE], [N.fulfill.cx - NW / 2, LANE]);
-const EDGE_JIRA = linkPath(H, [N.fulfill.cx + NW / 2, LANE], [N.jira.cx - NW / 2, LANE]);
-const EDGE_VAULT = linkPath(V, [N.vault.cx, N.vault.cy - N.vault.h / 2], [N.fulfill.cx, LANE + NH / 2]);
-// Curved governance connectors: Okta drops a soft S-curve into each agent-hop
-// midpoint (where it brokers the id-jag). They leave from two offset points on
-// Okta's underside so the two feeds read as distinct instead of crossing.
-const OKTA_L: [number, number] = [(N.triage.cx + NW / 2 + N.resolve.cx - NW / 2) / 2, LANE];
-const OKTA_R: [number, number] = [(N.resolve.cx + NW / 2 + N.fulfill.cx - NW / 2) / 2, LANE];
-const OKTA_BOT_L: [number, number] = [N.okta.cx - 34, N.okta.cy + N.okta.h / 2];
-const OKTA_BOT_R: [number, number] = [N.okta.cx + 34, N.okta.cy + N.okta.h / 2];
-const OKTA_CONN_L = linkPath(V, OKTA_BOT_L, OKTA_L);
-const OKTA_CONN_R = linkPath(V, OKTA_BOT_R, OKTA_R);
+const EDGE_INTAKE = linkPath(H, [N.intake.cx + NW / 2, LANE], [N.agent1.cx - NW / 2, LANE]);
+const EDGE_DELEGATE = linkPath(H, [N.agent1.cx + NW / 2, LANE], [N.agent2.cx - NW / 2, LANE]);
+const EDGE_JIRA = linkPath(H, [N.agent2.cx + NW / 2, LANE], [N.jira.cx - NW / 2, LANE]);
+const EDGE_VAULT = linkPath(V, [N.vault.cx, N.vault.cy - N.vault.h / 2], [N.agent2.cx + 40, LANE + NH / 2]);
+// the refused branch: straight down out of Agent 1, going nowhere
+const EDGE_DENIED = linkPath(V, [N.agent1.cx, LANE + NH / 2], [N.denied.cx, N.denied.cy - N.denied.h / 2]);
+// Okta drops a dotted connector into the delegation hop's midpoint.
+const OKTA_MID: [number, number] = [(N.agent1.cx + NW / 2 + N.agent2.cx - NW / 2) / 2, LANE];
+const OKTA_CONN = linkPath(V, [N.okta.cx, N.okta.cy + N.okta.h / 2], OKTA_MID);
 
 function hexA(hex: string, a: number): string {
   const r = parseInt(hex.slice(1, 3), 16), g = parseInt(hex.slice(3, 5), 16), b = parseInt(hex.slice(5, 7), 16);
@@ -70,12 +65,6 @@ function hexA(hex: string, a: number): string {
 }
 function statusColor(base: string, s: FlowStatus): string {
   return s === "idle" ? "#39424F" : s === "running" ? WARN : s === "error" ? BAD : base;
-}
-function combine(a: FlowStatus, b: FlowStatus): FlowStatus {
-  if (a === "error" || b === "error") return "error";
-  if (a === "running" || b === "running") return "running";
-  if (a === "ok" || b === "ok") return "ok";
-  return "idle";
 }
 
 function useTokenTravel(ref: React.RefObject<SVGPathElement>, status: FlowStatus, reduced: boolean, ms = 900) {
@@ -102,7 +91,9 @@ function useTokenTravel(ref: React.RefObject<SVGPathElement>, status: FlowStatus
   return pt;
 }
 
-function Edge({ d, gradId, status, reduced }: { d: string; gradId: string; status: FlowStatus; reduced: boolean }) {
+function Edge({ d, gradId, status, reduced, label }: {
+  d: string; gradId: string; status: FlowStatus; reduced: boolean; label?: string | null;
+}) {
   const ref = useRef<SVGPathElement>(null);
   const pt = useTokenTravel(ref, status, reduced);
   return (
@@ -114,6 +105,13 @@ function Edge({ d, gradId, status, reduced }: { d: string; gradId: string; statu
         <path d={d} fill="none" strokeWidth={2.5} stroke={`url(#${gradId})`} strokeLinecap="round"
           style={{ strokeDasharray: "5 10", animation: "flowdash .7s linear infinite" }} />
       )}
+      {label && (
+        <text textAnchor="middle" fontSize={11} fontWeight={600} fill={status === "idle" ? "#4A5462" : "#9AA6B8"}
+          style={{ fontFamily: "var(--font-mono)" }}
+          x={(ref.current?.getPointAtLength(0).x ?? 0)} y={LANE - 14}>
+          {label}
+        </text>
+      )}
       {pt && (
         <>
           <circle cx={pt.x} cy={pt.y} r={11} fill={hexA("#F5F8FC", 0.12)} />
@@ -124,10 +122,26 @@ function Edge({ d, gradId, status, reduced }: { d: string; gradId: string; statu
   );
 }
 
-// A soft vertical S-curve from Okta into an agent-hop midpoint, dotted so it
-// reads as a governance/brokering overlay (not data flow). The dots travel
-// downward only while that hop is actively exchanging; once the id-jag is
-// issued they settle, lit but still (nothing keeps moving after it lands).
+/** The refused branch. Dashed, red, and crossed, so it reads as "this did not
+ *  happen" rather than as another step that did. */
+function DeniedBranch({ d, active, reduced }: { d: string; active: boolean; reduced: boolean }) {
+  const stroke = active ? hexA(BAD, 0.75) : "#2A323F";
+  const mx = N.agent1.cx;
+  const my = (LANE + NH / 2 + N.denied.cy - N.denied.h / 2) / 2;
+  return (
+    <g>
+      <path d={d} fill="none" strokeWidth={1.8} strokeDasharray="4 5" strokeLinecap="round" stroke={stroke} />
+      {active && (
+        <g stroke={hexA(BAD, 0.95)} strokeWidth={2.2} strokeLinecap="round"
+          style={reduced ? undefined : { filter: `drop-shadow(0 0 6px ${hexA(BAD, 0.6)})` }}>
+          <line x1={mx - 7} y1={my - 7} x2={mx + 7} y2={my + 7} />
+          <line x1={mx + 7} y1={my - 7} x2={mx - 7} y2={my + 7} />
+        </g>
+      )}
+    </g>
+  );
+}
+
 function OktaConnector({ d, to, active, flowing, reduced }: {
   d: string; to: [number, number]; active: boolean; flowing: boolean; reduced: boolean;
 }) {
@@ -142,53 +156,40 @@ function OktaConnector({ d, to, active, flowing, reduced }: {
   );
 }
 
-// hover detail, the Okta id / mechanism revealed when you hover a node. For the
-// three AI agents, the id and the real name reveal together, on purpose, the
-// static label above only ever says "Agent N."
-const NODE_DETAIL: Partial<Record<NodeKey, string>> = {
-  intake: "external ticketing system",
-  triage: `wlpEXAMPLETriageAgt1 · ${NODES.triage.realName}`,
-  resolve: `wlpEXAMPLEResolveAg1 · ${NODES.resolve.realName}`,
-  fulfill: `wlpEXAMPLEFulfillAg1 · ${NODES.fulfill.realName}`,
-  okta: "id-jag · agent.invoke",
-  vault: "STS vaulted-secret",
-  jira: "project ITSD",
-};
-
 function Node({ k, status, label, hover, setHover }: {
   k: NodeKey; status: FlowStatus; label?: string | null;
   hover: NodeKey | null; setHover: (k: NodeKey | null) => void;
 }) {
   const n = NODES[k];
-  const compact = k === "okta" || k === "vault";
+  const compact = k === "okta" || k === "vault" || k === "denied";
   const c = statusColor(n.color, status);
   const active = status === "running" || status === "ok";
   const hovered = hover === k;
   const dimmed = hover !== null && !hovered;
   const tlx = n.cx - n.w / 2, tly = n.cy - n.h / 2;
   const iconC = status === "idle" ? NEUTRAL : c;
-  const detail = NODE_DETAIL[k];
-  // secondary line: reveal the id/detail on hover; otherwise the live label
-  const showDetail = hovered && !!detail;
-  const sec = showDetail ? detail : label;
-  const secColor = showDetail ? n.color : status === "running" ? WARN : status === "ok" ? n.color : NEUTRAL;
-  const glow = hovered ? `drop-shadow(0 0 16px ${hexA(active ? c : n.color, 0.5)})` : active ? `drop-shadow(0 0 12px ${hexA(c, 0.33)})` : undefined;
+  const secColor = status === "running" ? WARN : status === "ok" ? n.color : NEUTRAL;
+  const glow = hovered
+    ? `drop-shadow(0 0 16px ${hexA(active ? c : n.color, 0.5)})`
+    : active ? `drop-shadow(0 0 12px ${hexA(c, 0.33)})` : undefined;
   return (
-    <motion.g className="cursor-pointer" initial={false} animate={{ opacity: dimmed ? 0.4 : 1 }}
+    <motion.g className="cursor-default" initial={false} animate={{ opacity: dimmed ? 0.45 : 1 }}
       onPointerEnter={() => setHover(k)} onPointerLeave={() => setHover(null)} style={{ filter: glow }}>
       <motion.rect x={tlx} y={tly} width={n.w} height={n.h} rx={13} initial={false}
-        animate={{ fill: hexA(c, status === "idle" ? 0.05 : 0.12), stroke: hexA(hovered ? n.color : c, status === "idle" && !hovered ? 0.45 : 0.95) }}
+        animate={{
+          fill: hexA(c, status === "idle" ? 0.05 : 0.12),
+          stroke: hexA(hovered ? n.color : c, status === "idle" && !hovered ? 0.45 : 0.95),
+        }}
         transition={{ duration: 0.3 }} strokeWidth={hovered ? 2.4 : 1.5}
         className={status === "running" ? "animate-pulse" : undefined} />
       {compact ? (
         <>
           <g transform={`translate(${tlx + 16},${n.cy - 12})`}><n.Icon width={24} height={24} color={iconC} strokeWidth={2} /></g>
           <text x={tlx + 48} y={n.cy - 3} fontSize={15} fontWeight={600} fill="#F0F3F8">{n.name}</text>
-          {sec ? (
+          {label ? (
             <g transform={`translate(${tlx + 48},${n.cy + 14})`}>
-              {!showDetail && <circle cx={3} cy={-3} r={3.5} fill={secColor} className={status === "running" ? "live-dot" : undefined} />}
-              <text x={showDetail ? 0 : 13} y={0} fontSize={showDetail ? 10.5 : 11.5} fontWeight={500} fill={secColor}
-                style={showDetail ? { fontFamily: "var(--font-mono)" } : undefined}>{sec}</text>
+              <circle cx={3} cy={-3} r={3.5} fill={secColor} className={status === "running" ? "live-dot" : undefined} />
+              <text x={13} y={0} fontSize={11.5} fontWeight={500} fill={secColor}>{label}</text>
             </g>
           ) : (
             <text x={tlx + 48} y={n.cy + 14} fontSize={11.5} fill="#8B96A8">{n.kind}</text>
@@ -199,11 +200,10 @@ function Node({ k, status, label, hover, setHover }: {
           <g transform={`translate(${tlx + 16},${tly + 16})`}><n.Icon width={26} height={26} color={iconC} strokeWidth={2} /></g>
           <text x={tlx + 52} y={tly + 31} fontSize={16.5} fontWeight={600} fill="#F0F3F8">{n.name}</text>
           <text x={tlx + 52} y={tly + 50} fontSize={12} fill="#8B96A8">{n.kind}</text>
-          {sec && (
+          {label && (
             <g transform={`translate(${tlx + 16},${tly + 70})`}>
-              {!showDetail && <circle cx={3.5} cy={-3.5} r={3.5} fill={secColor} className={status === "running" ? "live-dot" : undefined} />}
-              <text x={showDetail ? 0 : 14} y={0} fontSize={showDetail ? 11 : 12} fontWeight={500} fill={secColor}
-                style={showDetail ? { fontFamily: "var(--font-mono)" } : undefined}>{sec}</text>
+              <circle cx={3.5} cy={-3.5} r={3.5} fill={secColor} className={status === "running" ? "live-dot" : undefined} />
+              <text x={14} y={0} fontSize={12} fontWeight={500} fill={secColor}>{label}</text>
             </g>
           )}
         </>
@@ -224,55 +224,75 @@ export default function AgentFlowGraph({ events }: { events: ActivityEvent[] }) 
   const state = useMemo(() => deriveAgentFlowState(events), [events]);
   const reduced = useReducedMotion() ?? false;
   const [hoverNode, setHoverNode] = useState<NodeKey | null>(null);
-  const hop1 = state.edges.triageToResolve.status;
-  const hop2 = state.edges.resolveToFulfillment.status;
-  const oktaStatus = combine(hop1, hop2);
-  const anyRunning = Object.values(state.nodes).some((s) => s === "running") || hop1 === "running" || hop2 === "running";
+  const delegate = state.edges.agent1ToAgent2.status;
+  const anyRunning = Object.values(state.nodes).some((s) => s === "running") || delegate === "running";
 
   const labels = useMemo(() => {
     const by = latestByStep(events);
-    const dept = (by.get("intake_classify")?.data?.department as string) || null;
+    const dept = (by.get("classify")?.data?.department as string) || null;
     const jw = by.get("jira_write");
     const key = (jw?.data?.issue_key as string) || null;
     const pr = (jw?.data?.priority as string) || null;
     const run = (s: FlowStatus) => s === "running";
+    const reads = state.readCount;
     return {
       intake: state.nodes.intake === "ok" ? "received" : null,
-      triage: run(state.nodes.triage) ? "classifying…" : dept ? `→ ${dept.replace(/\bManagement\b/, "Mgmt")}` : null,
-      resolve: run(state.nodes.resolve) ? "resolving…" : state.nodes.resolve === "ok" ? "drafted" : null,
-      fulfill: run(state.nodes.fulfill) ? "executing…" : state.nodes.fulfill === "ok" ? "filed" : null,
+      agent1: run(state.nodes.agent1)
+        ? "reading…"
+        : dept
+          ? `→ ${dept.replace(/\bManagement\b/, "Mgmt")}${reads !== null ? ` · ${reads} similar` : ""}`
+          : null,
+      agent2: run(state.nodes.agent2) ? "writing…" : state.nodes.agent2 === "ok" ? "filed" : null,
       jira: key ? `${key}${pr ? ` · ${pr}` : ""}` : null,
-      okta: oktaStatus === "running" ? "issuing ID-JAG…" : oktaStatus === "ok" ? "ID-JAG issued" : null,
+      okta: delegate === "running" ? "issuing ID-JAG…" : delegate === "ok" ? "ID-JAG issued" : null,
       vault: state.vaultBadge === "ok" ? "secret released" : state.vaultBadge === "running" ? "releasing…" : null,
+      denied: state.writeDenied.denied ? state.writeDenied.error ?? "access_denied" : null,
     };
-  }, [events, state, oktaStatus]);
+  }, [events, state, delegate]);
+
+  const deniedActive = state.writeDenied.denied;
 
   return (
     <div className={`card edge-accent hero-mesh overflow-hidden p-4 transition-shadow ${anyRunning ? "shadow-[0_0_0_1px_rgba(122,162,255,0.25),0_8px_40px_-12px_rgba(122,162,255,0.25)]" : ""}`}>
-      <svg viewBox="0 0 1200 344" className="w-full" role="img"
-        aria-label="Three-agent delegation flow: Intake to Agent 1 to Agent 2 to Agent 3 to Jira, with Okta brokering both agent-to-agent hops. Hover a node to reveal its Okta id and real name.">
+      <svg viewBox="0 0 1200 360" className="w-full" role="img"
+        aria-label="Two-agent delegation flow. Intake hands to Agent 1, which holds ticket.read and is refused ticket.write by Okta policy. Agent 1 delegates to Agent 2, which holds ticket.write and files to Jira using a credential released from the Okta Privileged Access vault.">
         <defs>
-          <Grad id="g-in" from={NEUTRAL} to={TRIAGE_COLOR} x1={N.intake.cx} x2={N.triage.cx} />
-          <Grad id="g-h1" from={TRIAGE_COLOR} to={RESOLVE_COLOR} x1={N.triage.cx} x2={N.resolve.cx} />
-          <Grad id="g-h2" from={RESOLVE_COLOR} to={FULFILL_COLOR} x1={N.resolve.cx} x2={N.fulfill.cx} />
-          <Grad id="g-jira" from={FULFILL_COLOR} to={NEUTRAL} x1={N.fulfill.cx} x2={N.jira.cx} />
-          <Grad id="g-vault" from={VAULT} to={FULFILL_COLOR} x1={N.vault.cx} x2={N.fulfill.cx} />
+          <Grad id="g-in" from={NEUTRAL} to={TRIAGE_COLOR} x1={N.intake.cx} x2={N.agent1.cx} />
+          <Grad id="g-del" from={TRIAGE_COLOR} to={FULFILL_COLOR} x1={N.agent1.cx} x2={N.agent2.cx} />
+          <Grad id="g-jira" from={FULFILL_COLOR} to={NEUTRAL} x1={N.agent2.cx} x2={N.jira.cx} />
+          <Grad id="g-vault" from={VAULT_COLOR} to={FULFILL_COLOR} x1={N.vault.cx} x2={N.agent2.cx} />
         </defs>
 
-        <Edge d={EDGE_INTAKE} gradId="g-in" status={state.edges.intakeToTriage.status} reduced={reduced} />
+        <Edge d={EDGE_INTAKE} gradId="g-in" status={state.edges.intakeToAgent1.status} reduced={reduced} />
         <Edge d={EDGE_VAULT} gradId="g-vault" status={state.vaultBadge} reduced={reduced} />
-        <Edge d={EDGE_A2A1} gradId="g-h1" status={hop1} reduced={reduced} />
-        <Edge d={EDGE_A2A2} gradId="g-h2" status={hop2} reduced={reduced} />
-        <Edge d={EDGE_JIRA} gradId="g-jira" status={state.edges.fulfillmentToJira.status} reduced={reduced} />
-        <OktaConnector d={OKTA_CONN_L} to={OKTA_L} active={hop1 === "running" || hop1 === "ok"} flowing={hop1 === "running"} reduced={reduced} />
-        <OktaConnector d={OKTA_CONN_R} to={OKTA_R} active={hop2 === "running" || hop2 === "ok"} flowing={hop2 === "running"} reduced={reduced} />
+        <Edge d={EDGE_DELEGATE} gradId="g-del" status={delegate} reduced={reduced} />
+        <Edge d={EDGE_JIRA} gradId="g-jira" status={state.edges.agent2ToJira.status} reduced={reduced} />
+        <DeniedBranch d={EDGE_DENIED} active={deniedActive} reduced={reduced} />
+        <OktaConnector d={OKTA_CONN} to={OKTA_MID}
+          active={delegate === "running" || delegate === "ok"} flowing={delegate === "running"} reduced={reduced} />
 
-        <Node k="okta" status={oktaStatus} label={labels.okta} hover={hoverNode} setHover={setHoverNode} />
+        {/* scope labels: the CRUD story, readable without hovering anything */}
+        <text x={(N.intake.cx + N.agent1.cx) / 2} y={LANE - 16} textAnchor="middle" fontSize={11}
+          fontWeight={600} fill={state.edges.intakeToAgent1.scope ? RESOLVE_COLOR : "#4A5462"}
+          style={{ fontFamily: "var(--font-mono)" }}>
+          {state.edges.intakeToAgent1.scope ?? "ticket.read"}
+        </text>
+        <text x={(N.agent2.cx + N.jira.cx) / 2} y={LANE - 16} textAnchor="middle" fontSize={11}
+          fontWeight={600} fill={state.edges.agent2ToJira.scope ? FULFILL_COLOR : "#4A5462"}
+          style={{ fontFamily: "var(--font-mono)" }}>
+          {state.edges.agent2ToJira.scope ?? "ticket.write"}
+        </text>
+        <text x={N.agent1.cx + 14} y={(LANE + NH / 2 + N.denied.cy) / 2 + 4} fontSize={10.5}
+          fontWeight={600} fill={deniedActive ? BAD : "#4A5462"} style={{ fontFamily: "var(--font-mono)" }}>
+          ticket.write
+        </text>
+
+        <Node k="okta" status={delegate} label={labels.okta} hover={hoverNode} setHover={setHoverNode} />
         <Node k="vault" status={state.vaultBadge} label={labels.vault} hover={hoverNode} setHover={setHoverNode} />
+        <Node k="denied" status={deniedActive ? "error" : "idle"} label={labels.denied} hover={hoverNode} setHover={setHoverNode} />
         <Node k="intake" status={state.nodes.intake} label={labels.intake} hover={hoverNode} setHover={setHoverNode} />
-        <Node k="triage" status={state.nodes.triage} label={labels.triage} hover={hoverNode} setHover={setHoverNode} />
-        <Node k="resolve" status={state.nodes.resolve} label={labels.resolve} hover={hoverNode} setHover={setHoverNode} />
-        <Node k="fulfill" status={state.nodes.fulfill} label={labels.fulfill} hover={hoverNode} setHover={setHoverNode} />
+        <Node k="agent1" status={state.nodes.agent1} label={labels.agent1} hover={hoverNode} setHover={setHoverNode} />
+        <Node k="agent2" status={state.nodes.agent2} label={labels.agent2} hover={hoverNode} setHover={setHoverNode} />
         <Node k="jira" status={state.nodes.jira} label={labels.jira} hover={hoverNode} setHover={setHoverNode} />
       </svg>
 

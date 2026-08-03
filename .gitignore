@@ -13,3 +13,6 @@ __pycache__/
 apps/web/.next/
 apps/web/node_modules/
 apps/web/next-env.d.ts
+
+# build artifacts
+apps/web/tsconfig.tsbuildinfo

@@ -1,7 +1,8 @@
-// Activity model. The SAME events drive two surfaces:
+// Activity model. The same events drive two surfaces:
 //  - Service Desk (main): product-friendly `plain` lines, the work as it happens.
-//  - How it works (deep dive): `tech` + decoded `token_claims` + System Log ids.
-// Mock stream makes it demoable; flips to live SSE when NEXT_PUBLIC_ORCHESTRATOR_URL is set.
+//  - Chain of custody (/tokens): the credential obtained at each step.
+// An offline mock keeps the app demoable; it flips to live SSE when
+// NEXT_PUBLIC_ORCHESTRATOR_URL is set.
 
 export type Status = "running" | "ok" | "error";
 export type ActorKind = "intake" | "triage" | "resolve" | "fulfill" | "okta";
@@ -14,27 +15,18 @@ export interface ActivityEvent {
   tech?: string;          // deep-dive detail
   primary?: boolean;      // surfaced on the main feed
   token_claims?: Record<string, unknown> | null;
-  raw_tokens?: Record<string, string> | null; // {label: compact JWT}, e.g. {"t1": "...", "t_res": "..."}
+  raw_tokens?: Record<string, string> | null; // {label: compact JWT}
   system_log_id?: string | null;
   data?: Record<string, unknown>;
   status?: Status;
   ts?: number;
 }
 
-// "Last event per step wins", the same pattern TicketActivity built inline;
-// shared here since AgentFlowGraph and the Jira-link lookup need it too.
+// "Last event per step wins", since each step arrives twice (running, then ok).
 export function latestByStep(events: ActivityEvent[]): Map<string, ActivityEvent> {
   const latest = new Map<string, ActivityEvent>();
   for (const e of events) latest.set(e.step, e);
   return latest;
-}
-
-// Merges raw_tokens across the whole stream (first-appearance order), the flat
-// {label: rawJwt} map the Token Inspector reads. Additive only.
-export function collectRawTokens(events: ActivityEvent[]): Record<string, string> {
-  const out: Record<string, string> = {};
-  for (const e of events) if (e.raw_tokens) Object.assign(out, e.raw_tokens);
-  return out;
 }
 
 export interface Ticket {
@@ -47,65 +39,53 @@ export interface Ticket {
   issueKey?: string;
   issueUrl?: string;
   outcome?: "auto_resolved" | "routed"; // set once the run finishes
-  resolution?: string;                   // customer reply the agent sent (auto-resolve only)
+  resolution?: string;                   // customer reply the agent sent
   createdAgo: string;
 }
 
 export const ORCH = process.env.NEXT_PUBLIC_ORCHESTRATOR_URL || "";
 
-// Bridges the real per-step token_claims from a live run over to /how-it-works,
-// which is a separate page (and loses component state on navigation).
-export const TOKEN_CLAIMS_KEY = "atlas:tokenClaims";
+// ---------------------------------------------------------------------------
+// Bridge a completed run over to /tokens, which is a separate page and so loses
+// component state on navigation. Stores the raw events; /tokens derives the
+// chain from them (see lib/chain.ts) rather than this module guessing a shape.
 
-export function captureTokenClaims(e: ActivityEvent) {
-  if (typeof window === "undefined" || !e.token_claims) return;
-  try {
-    const raw = window.sessionStorage.getItem(TOKEN_CLAIMS_KEY);
-    const store = raw ? JSON.parse(raw) : {};
-    store[e.step] = { token_claims: e.token_claims, system_log_id: e.system_log_id ?? null, captured_at: Date.now() };
-    window.sessionStorage.setItem(TOKEN_CLAIMS_KEY, JSON.stringify(store));
-  } catch {
-    // sessionStorage unavailable (private mode, etc.), the static example still renders
-  }
-}
+export const RUN_KEY = "atlas:lastRun";
 
-// Bridges a full run's raw JWTs + vault exchange metadata over to /tokens, a
-// separate page (and loses component state on navigation) — parallel to
-// TOKEN_CLAIMS_KEY above, not a replacement (AgentStatusBadge on /agents still
-// reads that one). Written once a run completes; the Token Inspector falls
-// back to clearly-labeled illustrative examples when this key is absent.
-export const RAW_TOKENS_KEY = "atlas:rawTokens";
-
-export interface CapturedRawTokens {
-  tokens: Record<string, string>;
-  vault: Record<string, unknown> | null;
+export interface CapturedRun {
+  events: ActivityEvent[];
   capturedAt: number;
 }
 
-export function captureRawTokens(events: ActivityEvent[]) {
+export function captureRun(events: ActivityEvent[]) {
   if (typeof window === "undefined") return;
-  const tokens = collectRawTokens(events);
-  if (Object.keys(tokens).length === 0) return;
+  // only steps that carry credentials or a denial matter downstream; keeping the
+  // payload small avoids the ~5MB sessionStorage ceiling on long sessions
+  const keep = events.filter(
+    (e) => e.raw_tokens || e.data?.denied || e.step === "write_denied",
+  );
+  if (!keep.length) return;
   try {
-    const vault = latestByStep(events).get("opa_vault")?.data ?? null;
-    const payload: CapturedRawTokens = { tokens, vault, capturedAt: Date.now() };
-    window.sessionStorage.setItem(RAW_TOKENS_KEY, JSON.stringify(payload));
+    const payload: CapturedRun = { events: keep, capturedAt: Date.now() };
+    window.sessionStorage.setItem(RUN_KEY, JSON.stringify(payload));
   } catch {
-    // sessionStorage unavailable, the Token Inspector falls back to illustrative examples
+    // sessionStorage unavailable; /tokens falls back to illustrative examples
   }
 }
 
-export function readCapturedRawTokens(): CapturedRawTokens | null {
+export function readCapturedRun(): CapturedRun | null {
   if (typeof window === "undefined") return null;
   try {
-    const raw = window.sessionStorage.getItem(RAW_TOKENS_KEY);
+    const raw = window.sessionStorage.getItem(RUN_KEY);
     if (!raw) return null;
-    const parsed = JSON.parse(raw) as CapturedRawTokens;
-    return parsed?.tokens ? parsed : null;
+    const parsed = JSON.parse(raw) as CapturedRun;
+    return Array.isArray(parsed?.events) ? parsed : null;
   } catch {
     return null;
   }
 }
+
+// ---------------------------------------------------------------------------
 
 const POOL: Array<{ subject: string; body: string; requester: string; team: string }> = [
   { subject: "Can't connect to VPN from home", team: "Networking",
@@ -135,27 +115,21 @@ const POOL: Array<{ subject: string; body: string; requester: string; team: stri
   { subject: "DNS resolution failing for internal sites", team: "Networking",
     body: "Internal tools like wiki.acme.com won't resolve on the corporate network, but public sites load fine. Started after this morning's maintenance window.",
     requester: "raj.patel@acme.example" },
-  { subject: "VPN split-tunnel not routing to the data center", team: "Networking",
-    body: "I can reach the internet on VPN but not the 10.20.x.x data-center subnet. Other people on my team can. Blocks my deploys.",
-    requester: "mia.torres@acme.example" },
   { subject: "Need admin role on the Payments Jira project", team: "Access Management",
     body: "I'm the new lead for Payments but only have contributor access in Jira. Need project-admin to manage the board and workflows.",
     requester: "kofi.mensah@acme.example" },
-  { subject: "Can't open the shared HR drive after my transfer", team: "Access Management",
-    body: "Moved from Support to People Ops last week and the HR shared drive shows 'access denied'. Manager approved the move already.",
-    requester: "hana.kim@acme.example" },
   { subject: "External monitor flickers on the new dock", team: "Hardware",
     body: "My 4K monitor flickers every few seconds through the new USB-C dock, but is fine plugged in directly. Swapped the cable, no change.",
     requester: "diego.romero@acme.example" },
-  { subject: "Webcam not detected after BIOS update", team: "Hardware",
-    body: "After the firmware update pushed last night, the built-in webcam is gone from Device Manager. I have client calls all day.",
-    requester: "ava.nguyen@acme.example" },
   { subject: "Excel macros disabled by policy during finance close", team: "Software",
     body: "Group policy is blocking macros in Excel and our close workbook depends on them. Need an exception for the finance team this week.",
     requester: "liam.oconnor@acme.example" },
   { subject: "Zoom add-in missing from Outlook", team: "Software",
     body: "The Zoom scheduling add-in disappeared from the Outlook ribbon after the last update. Reinstalling Zoom didn't bring it back.",
     requester: "sofia.rossi@acme.example" },
+  { subject: "Webcam not detected after BIOS update", team: "Hardware",
+    body: "After the firmware update pushed last night, the built-in webcam is gone from Device Manager. I have client calls all day.",
+    requester: "ava.nguyen@acme.example" },
 ];
 
 // A few resolved tickets so the queue looks like a real, lived-in desk.
@@ -166,9 +140,6 @@ export const SEED_QUEUE: Ticket[] = [
     team: "Hardware", status: "resolved", issueKey: "ITSD-119", createdAgo: "1h ago" },
 ];
 
-// Each simulated inbound is a fresh incident number (like a real ticketing
-// system) picked at random from the pool, avoiding an immediate repeat, so
-// the demo never feels stuck on one ticket.
 let lastPoolIdx = -1;
 let incidentCounter = 4479;
 const teamById: Record<string, string> = {}; // pool team, for the offline mock only
@@ -183,10 +154,19 @@ export function nextTicket(): Ticket {
   return { id, subject: p.subject, body: p.body, requester: p.requester, status: "new", createdAgo: "just now" };
 }
 
-const RES_ISS = "https://example.oktapreview.com/oauth2/ausEXAMPLEResolveCA1";
-const FUL_ISS = "https://example.oktapreview.com/oauth2/ausEXAMPLEFulfillCA1";
+const READ = "ticket.read";
+const WRITE = "ticket.write";
 
-// Offline mock resolution the agent "sends" when a case auto-resolves.
+/** Offline stand-in for Claude's judgement, matching the backend's demo heuristic:
+ *  physical and entitlement problems need a human, settings problems do not. */
+function mockSelfServiceable(t: Ticket): boolean {
+  const s = `${t.subject} ${t.body}`.toLowerCase();
+  const needsHuman = ["won't power", "blink", "replace", "keyboard", "dock", "monitor",
+    "webcam", "hardware", "broken", "access", "permission", "admin role", "not a member",
+    "shared drive"];
+  return !needsHuman.some((k) => s.includes(k));
+}
+
 function mockResolution(t: Ticket): string {
   const who = t.requester.split("@")[0].split(".")[0];
   const name = who.charAt(0).toUpperCase() + who.slice(1);
@@ -195,71 +175,69 @@ function mockResolution(t: Ticket): string {
     + `if anything is still not working.`;
 }
 
+/** Mirrors the backend's step list exactly, so demo and live stay in lockstep. */
 function sequence(t: Ticket): ActivityEvent[] {
   const team = teamById[t.id] || "Software";
   const issueKey = `ITSD-${120 + (incidentCounter % 60)}`;
-  // some cases auto-resolve (agent solves + closes), others route to a human
-  const auto = Math.random() < 0.5;
+  const auto = mockSelfServiceable(t);
   const resolution = auto ? mockResolution(t) : "";
-  const jiraEvent: ActivityEvent = auto
-    ? { step: "jira_write", actor: "Fulfillment", actorKind: "fulfill", primary: true,
-        plain: `Auto-resolved ${issueKey} · replied to ${t.requester} · closed in Jira`,
-        tech: "POST customer reply comment, then transition the issue to Done",
-        data: { issue_key: issueKey, team, auto_resolved: true, resolution, requester: t.requester, jira_status: "Done" },
-        system_log_id: "jira.issue.resolved" }
-    : { step: "jira_write", actor: "Fulfillment", actorKind: "fulfill", primary: true,
-        plain: `Filed ${issueKey} in Jira · routed to ${team} · 2 comments`,
-        tech: "POST /rest/api/3/issue, created, componented, labeled, commented",
-        data: { issue_key: issueKey, team, auto_resolved: false }, system_log_id: "jira.issue.created" };
   return [
     { step: "inbound", actor: "Intake", actorKind: "intake", primary: true,
       plain: "Received via intake API", tech: `${t.id} ingested from the external ticketing system` },
-    { step: "intake_auth", actor: "Triage", actorKind: "triage",
-      plain: "Triage picked up the ticket",
-      tech: "Claude reads the ticket. Okta isn't involved yet, that starts at the handoff below." },
-    { step: "intake_classify", actor: "Triage", actorKind: "triage", primary: true,
+    { step: "read_grant", actor: "Agent 1", actorKind: "triage", primary: true,
+      plain: `Granted read access · ${READ}`,
+      tech: "The Intake Service bootstraps the chain (client_credentials, the one grant an agent may not use) and Agent 1 receives a read-only token.",
+      data: { scope: READ }, system_log_id: "app.oauth2.token.grant" },
+    { step: "jira_read", actor: "Agent 1", actorKind: "triage", primary: true,
+      plain: "Checked for duplicates · 1 similar ticket open",
+      tech: `GET /rest/api/3/search, authorized by ${READ}`,
+      data: { scope: READ } },
+    { step: "classify", actor: "Agent 1", actorKind: "triage", primary: true,
       plain: `Classified as ${team} · routed to the ${team} team`,
-      tech: "Claude classified the ticket and selected the destination team",
-      data: { department: team } },
-    // Hop 1: Triage → Resolution (one agent in the act chain)
-    { step: "a2a_exchange", actor: "Triage → Resolution", actorKind: "triage", primary: true,
-      plain: "Handed off to Agent 2",
-      tech: "Intake Service bootstraps (client_credentials); Triage exchanges that for an id-jag and invokes Resolution, agent → agent.",
-      token_claims: {
-        sub: "0oaEXAMPLEIntakeSvc1",
-        act: { sub: "wlpEXAMPLETriageAgt1", sub_profile: "ai_agent",
-               act: { sub: "0oaEXAMPLEIntakeSvc1", sub_profile: "service" } },
-        aud: "https://atlas.acme.example/resolution", scp: ["agent.invoke"], iss: RES_ISS,
-      },
-      system_log_id: "app.oauth2.token.grant.id_jag" },
-    { step: "devops_draft", actor: "Resolution", actorKind: "resolve", primary: true,
-      plain: auto ? "Assessed the case as self-serviceable, drafted a customer resolution" : "Decided the fix and drafted work notes",
-      tech: "Claude drafts the resolution. Resolution has no prod credential, it delegates execution to Fulfillment." },
-    // Hop 2: Resolution → Fulfillment (TWO agents in the act chain)
-    { step: "a2a_fulfillment", actor: "Resolution → Fulfillment", actorKind: "fulfill", primary: true,
-      plain: "Delegated execution to Agent 3",
-      tech: "Resolution invokes Fulfillment. The token's act claim now nests BOTH agents, Resolution ← Triage ← Intake Service.",
-      token_claims: {
-        sub: "0oaEXAMPLEIntakeSvc1",
-        act: { sub: "wlpEXAMPLEResolveAg1", sub_profile: "ai_agent",
-               act: { sub: "wlpEXAMPLETriageAgt1", sub_profile: "ai_agent",
-                      act: { sub: "0oaEXAMPLEIntakeSvc1", sub_profile: "service" } } },
-        aud: "https://atlas.acme.example/fulfillment", scp: ["agent.invoke"], iss: FUL_ISS,
-      },
-      system_log_id: "app.oauth2.token.grant.id_jag" },
-    { step: "opa_vault", actor: "Fulfillment", actorKind: "fulfill",
-      plain: "Retrieved Jira credential securely",
-      tech: "Jira credential released from the Okta OPA vault at runtime (STS vaulted-secret), never stored in agent code",
+      tech: "Claude classified the ticket and judged whether it is self-serviceable",
+      data: { department: team, self_serviceable: auto } },
+    { step: "write_denied", actor: "Agent 1", actorKind: "triage", primary: true,
+      plain: `Write refused by Okta · Agent 1 cannot hold ${WRITE}`,
+      tech: "Least privilege is enforced by Okta policy, not by this application.",
+      data: { denied: true, http_status: 401, error: "access_denied",
+        error_description: "Policy evaluation failed for this request, please check the policy configurations.",
+        attempted_scope: WRITE },
+      system_log_id: "app.oauth2.as.consent.grant.deny" },
+    { step: "a2a_delegate", actor: "Agent 1 → Agent 2", actorKind: "triage", primary: true,
+      plain: "Delegated to the write-capable agent",
+      tech: "The act claim records that Agent 1 initiated this, so the eventual write stays attributable to it.",
+      data: { scope: READ }, system_log_id: "app.oauth2.token.grant.id_jag" },
+    { step: "write_grant", actor: "Agent 2", actorKind: "fulfill", primary: true,
+      plain: `Granted write access · ${WRITE}`,
+      tech: "Agent 2 is the only client authorized on the write authorization server, so only Agent 2 can obtain this scope.",
+      data: { scope: WRITE }, system_log_id: "app.oauth2.token.grant.id_jag" },
+    { step: "draft", actor: "Agent 2", actorKind: "resolve", primary: true,
+      plain: auto ? "Assessed the case as self-serviceable, drafted a customer resolution"
+                  : "Decided the fix and drafted work notes",
+      tech: "Claude drafted the reply", data: { self_serviceable: auto } },
+    { step: "opa_vault", actor: "Agent 2", actorKind: "fulfill",
+      plain: "Released the Jira credential",
+      tech: "Vaulted-secret exchange against Okta Privileged Access, authorized by Agent 2's own inbound delegated token",
       system_log_id: "app.credential.vault.access" },
-    jiraEvent,
+    { step: "jira_write", actor: "Agent 2", actorKind: "fulfill", primary: true,
+      plain: auto ? `Auto-resolved ${issueKey} · replied to ${t.requester} · closed in Jira`
+                  : `Filed ${issueKey} · routed to ${team} · 2 comments`,
+      tech: `POST /rest/api/3/issue authorized by ${WRITE}`,
+      data: { issue_key: issueKey, team, auto_resolved: auto, resolution,
+        requester: t.requester, scope: WRITE },
+      system_log_id: auto ? "jira.issue.resolved" : "jira.issue.created" },
     { step: "done", actor: "Atlas", actorKind: "okta", primary: true,
-      plain: auto ? "Case auto-resolved by the agent · customer notified" : `Filed and routed to ${team} for a specialist`,
+      plain: auto ? "Case auto-resolved by the agent · customer notified"
+                  : `Filed and routed to ${team} for a specialist`,
       data: { auto_resolved: auto },
-      tech: "Three agents, each least-privileged. Every hop attributed and revocable." },
+      tech: "One agent could read. One could write. Okta decided which." },
   ];
 }
 
-export type PipelineResult = { issueKey?: string; issueUrl?: string; team?: string; autoResolved?: boolean; resolution?: string };
+export type PipelineResult = {
+  issueKey?: string; issueUrl?: string; team?: string;
+  autoResolved?: boolean; resolution?: string; failed?: boolean;
+};
 
 // Accumulate result fields as events stream in (works for live + mock alike).
 function absorb(result: PipelineResult, e: ActivityEvent) {
@@ -281,12 +259,28 @@ export async function runPipeline(
   if (ORCH) {
     // Send the ACTUAL ticket so the backend classifies/files what's on screen,
     // not a seed ticket. This is what makes "what you see = what ran" true.
-    const qs = new URLSearchParams({ ticket_id: ticket.id, title: ticket.subject, body: ticket.body, requester: ticket.requester });
+    const qs = new URLSearchParams({
+      ticket_id: ticket.id, title: ticket.subject,
+      body: ticket.body, requester: ticket.requester,
+    });
     const res = await fetch(`${ORCH}/api/run?${qs.toString()}`, { signal });
-    const reader = res.body!.getReader();
+    if (!res.ok || !res.body) {
+      // surfaced as a pipeline error rather than thrown, so the caller's finally
+      // is not the only thing standing between a 502 and a wedged UI
+      onEvent({
+        step: "error", actor: "Atlas", actorKind: "okta", status: "error", primary: true,
+        plain: `Orchestrator returned HTTP ${res.status}`,
+        tech: res.status === 429
+          ? "Rate limited. The run endpoint allows a limited number of runs per window."
+          : "The orchestrator could not be reached or returned an error.",
+      });
+      result.failed = true;
+      return result;
+    }
+    const reader = res.body.getReader();
     const dec = new TextDecoder();
     let buf = "";
-    while (true) {
+    for (;;) {
       const { done, value } = await reader.read();
       if (done) break;
       buf += dec.decode(value, { stream: true });
@@ -295,7 +289,13 @@ export async function runPipeline(
       for (const p of parts) {
         const line = p.split("\n").find((l) => l.startsWith("data: "));
         if (!line) continue;
-        const e: ActivityEvent = JSON.parse(line.slice(6));
+        let e: ActivityEvent;
+        try {
+          e = JSON.parse(line.slice(6));
+        } catch {
+          continue; // a partial or malformed frame must not kill the stream
+        }
+        if (e.step === "error") result.failed = true;
         absorb(result, e);
         onEvent(e);
       }
@@ -305,11 +305,11 @@ export async function runPipeline(
   for (const e of sequence(ticket)) {
     if (signal?.aborted) return result;
     onEvent({ ...e, status: "running", ts: Date.now() });
-    await delay(360);
+    await delay(340);
     if (signal?.aborted) return result;
     onEvent({ ...e, status: "ok", ts: Date.now() });
     absorb(result, e);
-    await delay(440);
+    await delay(400);
   }
   return result;
 }

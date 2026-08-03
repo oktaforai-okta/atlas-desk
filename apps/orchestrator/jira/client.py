@@ -50,7 +50,42 @@ class JiraClient:
         r = self._c.get(f"{self.base}/rest/api/3/project/{project_key}/components")
         return r.json() if r.status_code == 200 else []
 
-    # --- issue ops (the Resolution Agent's writes) ---
+    # --- read ops (Agent 1, ticket.read) ---
+    def search_similar(self, project_key: str, summary: str, limit: int = 5) -> List[dict]:
+        """Find open tickets resembling `summary`. The READ half of the CRUD story.
+
+        Uses JQL text search scoped to the project and to unresolved issues. Returns
+        a list of {key, summary, status}. Never raises: a read that fails degrades to
+        an empty list, because failing to find duplicates must not block filing.
+        """
+        terms = [w for w in "".join(c if c.isalnum() else " " for c in summary).split()
+                 if len(w) > 3][:6]
+        if not terms:
+            return []
+        jql = (f'project = "{project_key}" AND resolution = Unresolved AND '
+               f'text ~ "{" ".join(terms)}" ORDER BY created DESC')
+        try:
+            r = self._c.get(f"{self.base}/rest/api/3/search/jql",
+                            params={"jql": jql, "maxResults": limit,
+                                    "fields": "summary,status"})
+            if r.status_code != 200:
+                # older sites only expose the deprecated /search path
+                r = self._c.get(f"{self.base}/rest/api/3/search",
+                                params={"jql": jql, "maxResults": limit,
+                                        "fields": "summary,status"})
+            if r.status_code != 200:
+                return []
+            out = []
+            for i in r.json().get("issues", []):
+                f = i.get("fields") or {}
+                out.append({"key": i.get("key", ""),
+                            "summary": (f.get("summary") or "").strip(),
+                            "status": ((f.get("status") or {}).get("name") or "")})
+            return out
+        except Exception:
+            return []
+
+    # --- issue ops (the write-capable agent's writes) ---
     def create_issue(self, project_key: str, summary: str, description: str,
                      component: Optional[str] = None, labels: Optional[List[str]] = None,
                      priority: Optional[str] = None, issue_type: str = "Task") -> dict:

@@ -1,8 +1,9 @@
-"""OPA vaulted-secret retrieval (STS_VAULT_SECRET) for the Resolution Agent.
+"""OPA vaulted-secret retrieval (STS_VAULT_SECRET) for the write-capable agent.
 
-The agent authenticates to Okta with its own private_key_jwt and exchanges for the
-Jira API credential vaulted in Okta Privileged Access. Mirrors the adapter's
-OktaVaultSecretExchanger. The Jira credential never lives in code/env.
+Agent 2 authenticates to Okta with its own private_key_jwt and exchanges for the
+Jira API credential vaulted in Okta Privileged Access. The credential never lives
+in agent code, and the read-only agent has no connection to this secret at all,
+which is the point of splitting the two identities by capability.
 """
 from __future__ import annotations
 

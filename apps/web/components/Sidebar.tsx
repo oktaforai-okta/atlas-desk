@@ -2,14 +2,13 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Inbox, KeyRound, Bot, ShieldCheck, Network } from "lucide-react";
+import { Inbox, KeyRound, Network } from "lucide-react";
 import AtlasMark from "@/components/AtlasMark";
 
 const NAV = [
   { href: "/", label: "Service Desk", icon: Inbox },
   { href: "/architecture", label: "Architecture", icon: Network },
-  { href: "/tokens", label: "Token Inspector", icon: KeyRound },
-  { href: "/agents", label: "Agents", icon: Bot },
+  { href: "/tokens", label: "Chain of custody", icon: KeyRound },
 ];
 
 export default function Sidebar() {
@@ -43,17 +42,6 @@ export default function Sidebar() {
         })}
       </nav>
 
-      <div className="border-t border-line px-4 py-3">
-        <div className="flex items-center gap-2 text-2xs text-soft">
-          <span className="relative flex h-2 w-2">
-            <span className="absolute inline-flex h-full w-full rounded-full bg-ok/60 live-dot" />
-            <span className="relative inline-flex h-2 w-2 rounded-full bg-ok" />
-          </span>
-          <ShieldCheck className="h-3.5 w-3.5 text-ok" />
-          Secured by Okta
-        </div>
-        <div className="mt-1 font-mono text-2xs text-mute/70">example.oktapreview.com</div>
-      </div>
     </aside>
   );
 }

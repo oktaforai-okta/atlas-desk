@@ -6,10 +6,12 @@
 //   • d3-zoom: scroll to zoom, drag background to pan, "Fit" to reset
 //   • drag any node (d3.pointer stays accurate under zoom); the sim reflows
 //   • hover a node to spotlight its connections + reveal its Okta id
-//   • "Replay delegation" sends a token down the real path: service → 3 agents → Jira
-// Every node/edge is a real object in the deployed tenant. Okta itself isn't a
-// node, it's the issuer that brokers each agent→agent hop, shown as the id-jag
-// shield sitting on those edges (which is exactly where the token is minted).
+//   • "Replay delegation" sends a token down the real path: service → 2 agents → Jira
+// Each node mirrors an object in the reference tenant, but the ids shown below are
+// EXAMPLE placeholders, not live values: this diagram is static, so it cannot know
+// a real tenant's ids. Real ids appear on /tokens, read off actual tokens.
+// Okta itself isn't a node, it's the issuer that brokers the agent→agent hop,
+// shown as the id-jag shield on that edge (exactly where the token is minted).
 
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import {
@@ -42,31 +44,27 @@ const colorKey = (hex: string) => Object.keys(C).find((k) => C[k] === hex) ?? "e
 // on hover, or as the replay dot passes. Every id here is a live principal in the
 // deployed tenant.
 //
-// Agent nodes show a generic "Agent 1/2/3" statically, the real name (Triage/
-// Resolution/Fulfillment) only appears paired with the workload principal id in
-// the reveal, so learning who really did what requires actually looking at the
-// verifiable identity, not just reading a label. The Intake Service is a service
-// client, not an "Agent N" — its label was already generic-safe, untouched.
+// Two agents, distinguished by what they may do rather than by a role name.
+// Agent 1 holds ticket.read; Agent 2 is the only client authorized on the write
+// authorization server, so it is the only one that can hold ticket.write.
 const RAW_NODES: Omit<FNode, "x" | "y">[] = [
   { id: "inbound", label: "Inbound Tickets", role: "external system", icon: "inbox", type: "external", color: C.external, tx: 150, ty: 180 },
   { id: "svc", label: "Intake Service", role: "service client", idKind: "APP ID", idVal: "0oaEXAMPLEIntakeSvc1", icon: "server", type: "service", color: C.service, tx: 410, ty: 180 },
-  { id: "triage", label: "Agent 1", role: "AI Agent", realName: "Triage", idVal: "wlpEXAMPLETriageAgt1", icon: "bot", type: "agent", color: C.triage, tx: 670, ty: 180 },
-  { id: "resolve", label: "Agent 2", role: "AI Agent", realName: "Resolution", idVal: "wlpEXAMPLEResolveAg1", icon: "bot", type: "agent", color: C.resolve, tx: 930, ty: 180 },
-  { id: "fulfill", label: "Agent 3", role: "AI Agent", realName: "Fulfillment", idVal: "wlpEXAMPLEFulfillAg1", icon: "bot", type: "agent", color: C.fulfill, tx: 1190, ty: 180 },
-  { id: "jira", label: "Jira · ITSD", role: "IT Service Desk", icon: "kanban", type: "external", color: C.external, tx: 1450, ty: 180 },
-  { id: "vault", label: "OPA Vault", role: "vaulted secret", icon: "lock", type: "resource", color: C.resource, tx: 1190, ty: 445 },
+  { id: "triage", label: "Agent 1", role: "read only · ticket.read", realName: "reader", idVal: "wlpEXAMPLEAgentOne01", icon: "bot", type: "agent", color: C.triage, tx: 700, ty: 180 },
+  { id: "fulfill", label: "Agent 2", role: "write capable · ticket.write", realName: "writer", idVal: "wlpEXAMPLEAgentTwo01", icon: "bot", type: "agent", color: C.fulfill, tx: 1010, ty: 180 },
+  { id: "jira", label: "Jira · ITSD", role: "IT Service Desk", icon: "kanban", type: "external", color: C.external, tx: 1320, ty: 180 },
+  { id: "vault", label: "OPA Vault", role: "vaulted secret", icon: "lock", type: "resource", color: C.resource, tx: 1010, ty: 445 },
 ];
 const RAW_LINKS: FLink[] = [
   { source: "inbound", target: "svc" },
   { source: "svc", target: "triage" },
-  { source: "triage", target: "resolve", brokered: true },
-  { source: "resolve", target: "fulfill", brokered: true },
+  { source: "triage", target: "fulfill", brokered: true },
   { source: "fulfill", target: "vault", kind: "branch" },
   { source: "fulfill", target: "jira" },
 ];
 // Replay dips into the OPA Vault (Fulfillment fetching the Jira credential) and
 // back up before filing to Jira — so the credential pull is actually shown.
-const REPLAY = ["inbound", "svc", "triage", "resolve", "fulfill", "vault", "fulfill", "jira"];
+const REPLAY = ["inbound", "svc", "triage", "fulfill", "vault", "fulfill", "jira"];
 
 const NW = 186, NH = 62; // node card size — tighter (less empty space; wider gaps = bolder arrows)
 

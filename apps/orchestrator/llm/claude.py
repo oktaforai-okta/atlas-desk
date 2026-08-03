@@ -7,11 +7,11 @@ from __future__ import annotations
 
 import json
 import os
-from typing import List
+from typing import List, Optional
 
 from tickets.seeds import DEPARTMENTS
 
-MODEL = os.environ.get("CLAUDE_MODEL", "claude-sonnet-4-6")
+MODEL = os.environ.get("CLAUDE_MODEL", "claude-sonnet-5")
 
 
 class ClassificationError(ValueError):
@@ -28,14 +28,42 @@ def _no_dashes(s: str) -> str:
     return s.replace(" ,", ",").replace("  ", " ").strip()
 
 
-def build_classify_prompt(title: str, body: str) -> str:
+def build_classify_prompt(title: str, body: str, similar: Optional[List[str]] = None) -> str:
+    """Triage prompt: department, urgency, AND the self-serviceable judgement.
+
+    The auto-resolve decision is the model's, not a coin flip. It is made here,
+    in the same call as classification, so the judgement sees the same context
+    the routing decision saw (including any similar open tickets Agent 1 found
+    on its read pass) and costs no extra round trip.
+    """
     depts = ", ".join(DEPARTMENTS)
+    context = ""
+    if similar:
+        listed = "\n".join(f"  - {s}" for s in similar[:5])
+        context = (
+            "\nSimilar tickets already open in this project (found by a read query):\n"
+            f"{listed}\n"
+            "If this looks like a duplicate of one of those, it is NOT self-serviceable, "
+            "a human should merge it.\n"
+        )
     return (
         "You are an IT service-desk triage agent. Classify the ticket below.\n"
         f"Choose exactly one department from: {depts}.\n"
         "Choose urgency from: Low, Medium, High, Critical.\n"
-        "Return STRICT JSON only, no prose, with keys: department, urgency, summary "
-        "(summary = one concise sentence).\n\n"
+        "\nAlso decide whether YOU can fully resolve this ticket end-to-end right now, "
+        "with no human and no physical action, by sending the user self-service "
+        "instructions.\n"
+        "  self_serviceable = true  for things fixed by settings, a reset, a reinstall, "
+        "a cache clear, a known configuration step, or a documented workaround.\n"
+        "  self_serviceable = false for anything needing hardware repair or replacement, "
+        "physical access, a shipment, a purchase, a permission grant you cannot make, "
+        "an account entitlement change, a security review, or a site visit. Also false "
+        "if the ticket is a likely duplicate, or if you are genuinely unsure.\n"
+        "Be honest. Guessing true on a broken laptop makes the system untrustworthy.\n"
+        f"{context}"
+        "\nReturn STRICT JSON only, no prose, with keys: department, urgency, summary "
+        "(one concise sentence), self_serviceable (boolean), reason (one short sentence "
+        "explaining the self_serviceable call).\n\n"
         f"TITLE: {title}\nBODY: {body}\n"
     )
 
@@ -50,10 +78,14 @@ def parse_classification(raw: str) -> dict:
     dept = obj.get("department", "")
     if dept not in DEPARTMENTS:
         raise ClassificationError(f"unknown department: {dept!r}")
+    # Anything other than an explicit true routes to a human. An absent or
+    # malformed judgement must never silently auto-close a real ticket.
     return {
         "department": dept,
         "urgency": obj.get("urgency", "Medium"),
         "summary": obj.get("summary", "").strip(),
+        "self_serviceable": obj.get("self_serviceable") is True,
+        "reason": _no_dashes(str(obj.get("reason", "")).strip()),
     }
 
 
@@ -75,10 +107,10 @@ def _client():
     )
 
 
-def classify(title: str, body: str) -> dict:
+def classify(title: str, body: str, similar: Optional[List[str]] = None) -> dict:
     msg = _client().messages.create(
-        model=MODEL, max_tokens=400,
-        messages=[{"role": "user", "content": build_classify_prompt(title, body)}],
+        model=MODEL, max_tokens=500,
+        messages=[{"role": "user", "content": build_classify_prompt(title, body, similar)}],
     )
     return parse_classification(msg.content[0].text)
 

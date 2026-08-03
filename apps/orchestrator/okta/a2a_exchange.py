@@ -123,6 +123,56 @@ def redeem_id_jag_for_a2a_token(
     return body
 
 
+def attempt_denied_write(
+    subject_token: str,
+    caller_principal_id: str,
+    caller_jwk: dict,
+    okta_domain: str,
+    write_cas_issuer: str,
+    write_resource_url: str,
+    write_scope: str,
+) -> dict:
+    """Deliberately attempt a write-scoped exchange as the READ-ONLY agent.
+
+    This is expected to FAIL, and the failure is the point: it is the demo's proof
+    that least privilege is enforced by Okta rather than asserted by this app.
+
+    Two independent barriers make it fail, verified live against the tenant:
+
+      1. The write scope exists ONLY on the write authorization server. Requesting
+         it anywhere else returns 400 invalid_scope ("One or more scopes are not
+         configured for the authorization server resource").
+      2. The read-only agent is not in the write AS's policy clients.include, so
+         asking that server directly returns 401 access_denied ("Policy evaluation
+         failed for this request").
+
+    Okta does not down-scope a token-exchange request: an ungrantable scope fails
+    the WHOLE request rather than yielding the grantable subset. So there is no
+    partial success to accidentally accept.
+
+    Returns the parsed error body plus "_status" so the UI can show Okta's own
+    words verbatim instead of a message this code invented.
+    """
+    org_token_endpoint = f"https://{okta_domain}/oauth2/v1/token"
+    assertion = build_client_assertion(caller_principal_id, org_token_endpoint, caller_jwk)
+    with httpx.Client(timeout=30) as c:
+        r = c.post(org_token_endpoint, data={
+            "grant_type": GRANT_TOKEN_EXCHANGE,
+            "subject_token": subject_token,
+            "subject_token_type": SUBJECT_TYPE_ACCESS_TOKEN,
+            "requested_token_type": REQUESTED_TYPE_ID_JAG,
+            "audience": write_cas_issuer,
+            "resource": write_resource_url,
+            "scope": write_scope,
+            "client_assertion_type": CLIENT_ASSERTION_TYPE,
+            "client_assertion": assertion,
+        })
+    body = _json(r)
+    body["_status"] = r.status_code
+    body["_denied"] = r.status_code >= 400
+    return body
+
+
 def _json(r: httpx.Response) -> dict:
     try:
         return r.json()

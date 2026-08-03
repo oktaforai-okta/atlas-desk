@@ -21,10 +21,12 @@ services:
     envVars:
       - key: JIRA_PROJECT_KEY
         value: ITSD
-      - key: AUTO_RESOLVE_RATE
-        value: "0.5"                     # fraction of cases the agents auto-resolve
-      - key: A2A_SCOPE
-        value: agent.invoke
+      # CRUD lanes. These scope names are the demo's whole point: Agent 1 may hold
+      # the read scope and Agent 2 the write scope, enforced by Okta policy.
+      - key: A2A_READ_SCOPE
+        value: ticket.read
+      - key: A2A_WRITE_SCOPE
+        value: ticket.write
       # ---- tenant-specific (your Okta domain + agent identities) ----
       - key: OKTA_DOMAIN
         sync: false
