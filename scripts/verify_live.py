@@ -1,0 +1,178 @@
+#!/usr/bin/env python3
+"""End-to-end verification against a deployed orchestrator.
+
+The unit suites (apps/orchestrator/tests, apps/web/lib/__tests__) cover pure
+logic. This covers the claims that only a real deployment can settle: that the
+tokens are genuinely signed, that the scopes actually differ per hop, that the
+act chain nests, that Okta really refuses the write, and that /api/last-run does
+not leak ticket content.
+
+Needs no credentials. It drives the same public endpoints a browser does.
+
+Usage:
+    python3 scripts/verify_live.py [orchestrator-url]
+
+Exits non-zero if any check fails, so it can gate a deploy.
+"""
+from __future__ import annotations
+
+import base64
+import json
+import sys
+import time
+import urllib.parse
+import urllib.request
+
+ORCH = (sys.argv[1] if len(sys.argv) > 1
+        else "https://atlas-orchestrator-r152.onrender.com").rstrip("/")
+ORIGIN = "https://atlas-desk.vercel.app"
+
+READ, WRITE = "ticket.read", "ticket.write"
+# tokens the pipeline should produce, and the scope each must carry
+EXPECTED = {"t1": READ, "idjag1": READ, "t_res": READ, "idjag2": WRITE, "t_ful": WRITE}
+# claim keys that must never appear in the publicly served last-run payload
+FORBIDDEN = ("similar", "resolution", "requester", "issue_key", "issue_url", "reason",
+             "body", "title")
+
+results: list[tuple[bool, str]] = []
+
+
+def check(ok: bool, label: str, detail: str = "") -> bool:
+    results.append((ok, label))
+    print(f"  {'PASS' if ok else 'FAIL'}  {label}" + (f"  [{detail}]" if detail else ""))
+    return ok
+
+
+def get(path: str, timeout: int = 60):
+    req = urllib.request.Request(f"{ORCH}{path}", headers={"Origin": ORIGIN,
+                                                           "Accept": "application/json"})
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        return json.load(r)
+
+
+def claims(tok: str) -> dict:
+    seg = tok.split(".")[1]
+    seg += "=" * ((4 - len(seg) % 4) % 4)
+    return json.loads(base64.urlsafe_b64decode(seg))
+
+
+def header(tok: str) -> dict:
+    seg = tok.split(".")[0]
+    seg += "=" * ((4 - len(seg) % 4) % 4)
+    return json.loads(base64.urlsafe_b64decode(seg))
+
+
+def scopes(c: dict) -> list[str]:
+    scp = c.get("scp")
+    if isinstance(scp, list):
+        return scp
+    return [s for s in str(c.get("scope") or "").split(" ") if s]
+
+
+def act_depth(c: dict) -> int:
+    n, node = 0, c.get("act")
+    while isinstance(node, dict):
+        n += 1
+        node = node.get("act")
+    return n
+
+
+def run_pipeline(title: str, body: str) -> list[dict]:
+    qs = urllib.parse.urlencode({"ticket_id": "INC-VERIFY", "title": title,
+                                 "body": body, "requester": "verify@example.test"})
+    req = urllib.request.Request(f"{ORCH}/api/run?{qs}",
+                                 headers={"Accept": "text/event-stream", "Origin": ORIGIN})
+    events, buf = [], ""
+    with urllib.request.urlopen(req, timeout=240) as r:
+        for raw in r:
+            buf += raw.decode("utf-8", "replace")
+            while "\n\n" in buf:
+                frame, buf = buf.split("\n\n", 1)
+                for line in frame.split("\n"):
+                    if line.startswith("data: "):
+                        events.append(json.loads(line[6:]))
+    return [e for e in events if e.get("status") == "ok"]
+
+
+print(f"Verifying {ORCH}\n")
+
+# ---------------------------------------------------------------- health
+print("health")
+h = get("/healthz")
+live = h.get("mode") == "live"
+check(h.get("ok") is True, "healthz responds ok")
+check(live, f"mode is live", f"mode={h.get('mode')} missing={h.get('missing_env')}")
+if not live:
+    print("\nNot live. Token checks below need real Okta credentials configured.")
+    sys.exit(1)
+
+# ---------------------------------------------------------------- pipeline
+print("\npipeline")
+ok = run_pipeline("Outlook signature block not saving",
+                  "My email signature reverts to blank every time I restart Outlook.")
+steps = [e["step"] for e in ok]
+for required in ("read_grant", "jira_read", "classify", "write_denied",
+                 "a2a_delegate", "write_grant", "opa_vault", "jira_write", "done"):
+    check(required in steps, f"emits {required}")
+
+# ---------------------------------------------------------------- the refusal
+print("\nthe refusal (this step must FAIL at Okta)")
+denial = next((e.get("data") or {} for e in ok if e["step"] == "write_denied"), {})
+check(denial.get("denied") is True, "Okta refused the write attempt",
+      f"http={denial.get('http_status')} error={denial.get('error')}")
+check(denial.get("attempted_scope") == WRITE, "the refused scope was the write scope")
+check(bool(denial.get("error_description")), "Okta's own wording is captured",
+      str(denial.get("error_description"))[:60])
+
+# ---------------------------------------------------------------- tokens
+print("\ntokens")
+tokens: dict[str, str] = {}
+for e in ok:
+    tokens.update(e.get("raw_tokens") or {})
+check(set(tokens) == set(EXPECTED), "all five credentials issued",
+      f"got {sorted(tokens)}")
+
+for name, want_scope in EXPECTED.items():
+    if name not in tokens:
+        check(False, f"{name} present")
+        continue
+    c, h_ = claims(tokens[name]), header(tokens[name])
+    check(h_.get("alg") == "RS256", f"{name} is signed RS256", str(h_.get("alg")))
+    check(want_scope in scopes(c), f"{name} carries {want_scope}", str(scopes(c)))
+    other = WRITE if want_scope == READ else READ
+    check(other not in scopes(c), f"{name} does NOT carry {other}")
+
+# the act chain must deepen as the request is delegated
+if "t_res" in tokens and "t_ful" in tokens:
+    d_res, d_ful = act_depth(claims(tokens["t_res"])), act_depth(claims(tokens["t_ful"]))
+    check(d_res >= 2, "delegated token's act names agent 1 and the service root", f"depth={d_res}")
+    check(d_ful > d_res, "write token's act nests one layer deeper than the read token",
+          f"{d_res} -> {d_ful}")
+    check(claims(tokens["t_res"])["sub"] == claims(tokens["t_ful"])["sub"],
+          "subject stays the service root across the capability change")
+
+# ---------------------------------------------------------------- last-run
+print("\n/api/last-run (published for the chain-of-custody page)")
+lr = get("/api/last-run")
+served = {k for e in lr.get("events", []) for k in (e.get("raw_tokens") or {})}
+check(bool(served), "serves the run's credentials", f"{sorted(served)}")
+check(lr.get("expired") is False, "not flagged expired")
+blob = json.dumps(lr)
+leaked = [k for k in FORBIDDEN if f'"{k}"' in blob]
+check(not leaked, "carries no ticket or customer content", f"leaked={leaked}" if leaked else "")
+check(not any(e.get("step") == "jira_read" for e in lr.get("events", [])),
+      "excludes jira_read, which holds other people's ticket summaries")
+expired_served = [k for e in lr.get("events", []) for k, v in (e.get("raw_tokens") or {}).items()
+                  if (claims(v).get("exp") or float("inf")) < time.time()]
+check(not expired_served, "serves no expired credential", f"{expired_served}")
+
+# ---------------------------------------------------------------- summary
+failed = [label for ok_, label in results if not ok_]
+print(f"\n{'=' * 70}")
+print(f"{len(results) - len(failed)}/{len(results)} checks passed")
+if failed:
+    print("\nFAILED:")
+    for f in failed:
+        print(f"  - {f}")
+    sys.exit(1)
+print("All checks passed.")

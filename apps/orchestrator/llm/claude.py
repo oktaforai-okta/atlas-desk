@@ -1,7 +1,8 @@
-"""Claude API wrapper: ticket classification (Intake) + comment drafting (Resolution).
+"""Claude API wrapper: triage classification, self-serviceability judgement, drafting.
 
-Prompt assembly + response parsing are pure functions (unit-tested). The network
-call lives in ``classify`` / ``draft_comments`` and uses ANTHROPIC_API_KEY.
+Prompt assembly and response parsing are pure functions, covered by
+``tests/test_claude.py``. The network calls live in ``classify``,
+``draft_comments`` and ``draft_resolution`` and use ANTHROPIC_API_KEY.
 """
 from __future__ import annotations
 

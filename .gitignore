@@ -16,3 +16,5 @@ apps/web/next-env.d.ts
 
 # build artifacts
 apps/web/tsconfig.tsbuildinfo
+apps/orchestrator/.venv/
+apps/web/node_modules/

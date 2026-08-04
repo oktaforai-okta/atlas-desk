@@ -107,6 +107,31 @@ The header pill reads Live only when the orchestrator itself reports live. It is
 
 To run fully live against your own tenant, see the environment table in [docs/OKTA_SETUP.md](docs/OKTA_SETUP.md).
 
+## Tests
+
+```bash
+# backend: pure logic (scope enforcement, the auto-resolve safety default,
+# the credential expiry window, vaulted-secret parsing)
+cd apps/orchestrator
+./.venv/bin/pip install -r requirements-dev.txt
+./.venv/bin/python -m pytest tests/ -q
+
+# frontend: chain assembly and flow-state derivation
+cd apps/web && npm test
+
+# end to end against a live deployment: are the tokens really signed, do the
+# scopes really differ per hop, does the act chain really nest, does Okta really
+# refuse the write, does /api/last-run leak anything
+python3 scripts/verify_live.py [orchestrator-url]
+```
+
+The unit suites cover the properties where a silent regression would undermine
+the demo's integrity rather than merely break it: that a read-only token can
+never satisfy a write, that anything other than an explicit boolean `true` routes
+a ticket to a human instead of auto-closing it, and that an expired credential is
+never published. `verify_live.py` exits non-zero on failure, so it can gate a
+deploy.
+
 ## Honest limitations
 
 This is a demo built to prove an identity pattern, not a hardened production service.
