@@ -77,9 +77,10 @@ def act_depth(c: dict) -> int:
     return n
 
 
-def run_pipeline(title: str, body: str) -> list[dict]:
+def run_pipeline(title: str, body: str, mode: str = "normal") -> list[dict]:
     qs = urllib.parse.urlencode({"ticket_id": "INC-VERIFY", "title": title,
-                                 "body": body, "requester": "verify@example.test"})
+                                 "body": body, "requester": "verify@example.test",
+                                 "mode": mode})
     req = urllib.request.Request(f"{ORCH}/api/run?{qs}",
                                  headers={"Accept": "text/event-stream", "Origin": ORIGIN})
     events, buf = [], ""
@@ -106,31 +107,22 @@ if not live:
     print("\nNot live. Token checks below need real Okta credentials configured.")
     sys.exit(1)
 
-# ---------------------------------------------------------------- pipeline
-print("\npipeline")
+# ================= NORMAL PATH: the work gets done ==========================
+print("\nnormal path (the work gets done)")
 ok = run_pipeline("Outlook signature block not saving",
                   "My email signature reverts to blank every time I restart Outlook.")
 steps = [e["step"] for e in ok]
-for required in ("read_grant", "jira_read", "classify", "write_denied",
-                 "a2a_delegate", "write_grant", "opa_vault", "jira_write", "done"):
+for required in ("read_grant", "jira_read", "classify", "a2a_delegate",
+                 "write_grant", "opa_vault", "jira_write", "done"):
     check(required in steps, f"emits {required}")
+# a successful run must NOT show a refusal; one shown on every run is decoration
+check("write_denied" not in steps, "shows NO refusal (nothing was refused)")
+check("blocked" not in steps, "does not report itself blocked")
 
-# ---------------------------------------------------------------- the refusal
-print("\nthe refusal (this step must FAIL at Okta)")
-denial = next((e.get("data") or {} for e in ok if e["step"] == "write_denied"), {})
-check(denial.get("denied") is True, "Okta refused the write attempt",
-      f"http={denial.get('http_status')} error={denial.get('error')}")
-check(denial.get("attempted_scope") == WRITE, "the refused scope was the write scope")
-check(bool(denial.get("error_description")), "Okta's own wording is captured",
-      str(denial.get("error_description"))[:60])
-
-# ---------------------------------------------------------------- tokens
-print("\ntokens")
 tokens: dict[str, str] = {}
 for e in ok:
     tokens.update(e.get("raw_tokens") or {})
-check(set(tokens) == set(EXPECTED), "all five credentials issued",
-      f"got {sorted(tokens)}")
+check(set(tokens) == set(EXPECTED), "all five credentials issued", f"got {sorted(tokens)}")
 
 for name, want_scope in EXPECTED.items():
     if name not in tokens:
@@ -142,7 +134,6 @@ for name, want_scope in EXPECTED.items():
     other = WRITE if want_scope == READ else READ
     check(other not in scopes(c), f"{name} does NOT carry {other}")
 
-# the act chain must deepen as the request is delegated
 if "t_res" in tokens and "t_ful" in tokens:
     d_res, d_ful = act_depth(claims(tokens["t_res"])), act_depth(claims(tokens["t_ful"]))
     check(d_res >= 2, "delegated token's act names agent 1 and the service root", f"depth={d_res}")
@@ -150,6 +141,37 @@ if "t_res" in tokens and "t_ful" in tokens:
           f"{d_res} -> {d_ful}")
     check(claims(tokens["t_res"])["sub"] == claims(tokens["t_ful"])["sub"],
           "subject stays the service root across the capability change")
+
+# ================= VIOLATION PATH: the agent over-reaches and is stopped =====
+print("\nviolation path (agent exceeds its authority)")
+bad = run_pipeline("Printer on the 3rd floor is jammed",
+                   "The shared printer reports a paper jam that will not clear.",
+                   mode="violation")
+bad_steps = [e["step"] for e in bad]
+denial = next((e.get("data") or {} for e in bad if e["step"] == "write_denied"), {})
+blocked = next((e.get("data") or {} for e in bad if e["step"] == "blocked"), {})
+
+check(denial.get("denied") is True, "Okta refused the write attempt",
+      f"http={denial.get('http_status')} error={denial.get('error')}")
+check(denial.get("attempted_scope") == WRITE, "the refused scope was the write scope")
+check(bool(denial.get("error_description")), "Okta's own wording is captured",
+      str(denial.get("error_description"))[:60])
+check(bool(blocked.get("blocked")), "run reports itself blocked")
+
+# THE assertion that makes the refusal meaningful rather than narrated
+check("jira_write" not in bad_steps, "NOTHING was written to Jira")
+check(blocked.get("wrote_to_jira") is False, "run declares it wrote nothing")
+check("a2a_delegate" not in bad_steps, "no delegation occurred")
+check("write_grant" not in bad_steps, "no write authority was granted")
+check("opa_vault" not in bad_steps, "the vaulted credential was never released")
+
+bad_tokens: dict[str, str] = {}
+for e in bad:
+    bad_tokens.update(e.get("raw_tokens") or {})
+check(set(bad_tokens) == {"t1"}, "only the read token exists", f"got {sorted(bad_tokens)}")
+if "t1" in bad_tokens:
+    check(WRITE not in scopes(claims(bad_tokens["t1"])),
+          "the one token it holds carries no write scope")
 
 # ---------------------------------------------------------------- last-run
 print("\n/api/last-run (published for the chain-of-custody page)")

@@ -10,15 +10,21 @@ It exists to answer one question concretely: **when an AI agent acts, and hands 
 
 Most agent demos show that Agent A can call Agent B. That is easy, and it proves very little. The interesting question is what each agent is *not* allowed to do.
 
-So this demo includes a step that **fails on purpose**:
+So the demo has **two buttons**, and they tell two different stories.
+
+**Simulate inbound ticket.** The work gets done. Agent 1 reads, classifies, and delegates to an agent that is allowed to write. The ticket is filed. No refusal appears anywhere, because nothing was refused.
+
+**Simulate policy violation.** Agent 1 tries to write the ticket itself instead of delegating. Okta refuses:
 
 ```
 Agent 1 asks Okta for ticket.write
-  -> HTTP 401  access_denied
-     "Policy evaluation failed for this request, please check the policy configurations."
+  -> HTTP 400  invalid_scope
+     "The following scopes are not allowed for this request: [ticket.write]."
 ```
 
-That is a real response from a real Okta tenant, surfaced verbatim in the UI, copyable. Least privilege here is not a sentence in a README. It is an HTTP status code you can reproduce.
+And then the run **stops**. No delegation, no write token, no vaulted credential, nothing filed in Jira. On the diagram, Agent 2 and Jira stay dark. That darkness is the evidence.
+
+That second path is the one worth watching, because the refusal has a consequence. A denial emitted on every run, including the successful ones, is decoration. A denial that only appears when an agent over-reaches, and that visibly prevents the write, is enforcement you can reproduce with an HTTP status code.
 
 ## Live demo
 
@@ -47,19 +53,33 @@ And Okta does not down-scope a token-exchange request: an ungrantable scope fail
 
 Agent 1 is not powerless, though. It can **delegate** to an agent that does have write access, and the resulting token's `act` claim records that Agent 1 initiated the request. So the write remains attributable to the agent that asked for it, even though that agent could never have performed it. That is the pattern worth stealing.
 
-## The pipeline
+## The two paths
 
 ```
-inbound
-  -> Agent 1 granted ticket.read
-  -> Agent 1 reads Jira for duplicates          (a real GET, scope-gated)
-  -> Claude classifies and judges self-serviceability
-  -> Agent 1 attempts a write, Okta refuses     (the proof)
-  -> Agent 1 delegates to Agent 2               (act chain begins)
-  -> Agent 2 obtains ticket.write               (capability change)
-  -> Agent 2 releases the Jira credential from the OPA vault
-  -> Agent 2 writes to Jira
+                inbound
+                  |
+       Agent 1 granted ticket.read
+                  |
+    Agent 1 reads Jira for duplicates      (a real GET, scope-gated)
+                  |
+    Claude classifies + judges self-serviceability
+                  |
+        +---------+----------+
+        |                    |
+     NORMAL              VIOLATION
+        |                    |
+  delegates to Agent 2   asks Okta for ticket.write
+        |                    |
+  Agent 2 gets           Okta REFUSES
+  ticket.write                |
+        |               run stops.
+  vault releases        nothing written.
+  the credential
+        |
+  Agent 2 writes to Jira
 ```
+
+The shared prefix is identical, which is what makes the comparison legible: the same agent, the same ticket, the same read authority. The only difference is whether it delegates or over-reaches.
 
 Whether a ticket auto-resolves is **Claude's judgment, not a coin flip**. A Slack audio problem gets fixed with self-service instructions and closed. A laptop that will not power on gets routed to a human, because no amount of instructions will fix hardware. The model is asked to be honest about the difference, and to default to routing when unsure.
 

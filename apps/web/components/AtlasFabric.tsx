@@ -50,8 +50,8 @@ const colorKey = (hex: string) => Object.keys(C).find((k) => C[k] === hex) ?? "e
 const RAW_NODES: Omit<FNode, "x" | "y">[] = [
   { id: "inbound", label: "Inbound Tickets", role: "external system", icon: "inbox", type: "external", color: C.external, tx: 150, ty: 180 },
   { id: "svc", label: "Intake Service", role: "service client", idKind: "APP ID", idVal: "0oaEXAMPLEIntakeSvc1", icon: "server", type: "service", color: C.service, tx: 410, ty: 180 },
-  { id: "triage", label: "Agent 1", role: "read only · ticket.read", realName: "reader", idVal: "wlpEXAMPLEAgentOne01", icon: "bot", type: "agent", color: C.triage, tx: 700, ty: 180 },
-  { id: "fulfill", label: "Agent 2", role: "write capable · ticket.write", realName: "writer", idVal: "wlpEXAMPLEAgentTwo01", icon: "bot", type: "agent", color: C.fulfill, tx: 1010, ty: 180 },
+  { id: "triage", label: "Agent 1", role: "read only", realName: "reader", idVal: "wlpEXAMPLEAgentOne01", icon: "bot", type: "agent", color: C.triage, tx: 700, ty: 180 },
+  { id: "fulfill", label: "Agent 2", role: "write capable", realName: "writer", idVal: "wlpEXAMPLEAgentTwo01", icon: "bot", type: "agent", color: C.fulfill, tx: 1010, ty: 180 },
   { id: "jira", label: "Jira · ITSD", role: "IT Service Desk", icon: "kanban", type: "external", color: C.external, tx: 1320, ty: 180 },
   { id: "vault", label: "OPA Vault", role: "vaulted secret", icon: "lock", type: "resource", color: C.resource, tx: 1010, ty: 445 },
 ];

@@ -28,6 +28,7 @@ const STEP_ACTOR_LABEL: Record<string, string> = {
   draft: "Agent 2",
   opa_vault: "Agent 2",
   jira_write: "Agent 2",
+  blocked: "Atlas",
   done: "Atlas",
   error: "Atlas",
 };

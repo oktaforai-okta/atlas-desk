@@ -6,9 +6,16 @@
 //                                     │
 //                                     ╳  ticket.write refused by Okta
 //
-// The dead-end branch under Agent 1 is the most important thing on the diagram:
-// it is the capability Agent 1 asked for and did not get. Okta brokers the
-// agent-to-agent hop (id-jag), shown by the Okta node and its connector.
+// The diagram renders one of two narratives, derived from the events:
+//
+//   normal     the delegation path lights end to end and the refusal branch is
+//              hidden entirely, because no refusal occurred.
+//   violation  the refusal branch is the whole story, and Agent 2, the vault and
+//              Jira stay dark, because the run never reached them. That darkness
+//              is the evidence: the write did not happen.
+//
+// Okta brokers the agent-to-agent hop (id-jag), shown by the Okta node and its
+// connector.
 //
 // Every pulse fires off a real ActivityEvent status transition. Raw tokens live
 // on /tokens, not duplicated here.
@@ -250,12 +257,15 @@ export default function AgentFlowGraph({ events }: { events: ActivityEvent[] }) 
     };
   }, [events, state, delegate]);
 
-  const deniedActive = state.writeDenied.denied;
+  const violation = state.path === "violation";
+  const deniedActive = violation && state.writeDenied.denied;
 
   return (
     <div className={`card edge-accent hero-mesh overflow-hidden p-4 transition-shadow ${anyRunning ? "shadow-[0_0_0_1px_rgba(122,162,255,0.25),0_8px_40px_-12px_rgba(122,162,255,0.25)]" : ""}`}>
       <svg viewBox="0 0 1200 360" className="w-full" role="img"
-        aria-label="Two-agent delegation flow. Intake hands to Agent 1, which holds ticket.read and is refused ticket.write by Okta policy. Agent 1 delegates to Agent 2, which holds ticket.write and files to Jira using a credential released from the Okta Privileged Access vault.">
+        aria-label={violation
+          ? "Blocked run. Agent 1 holds ticket.read and asked Okta for ticket.write. Okta refused, so the run stopped: Agent 2, the vault and Jira were never reached and nothing was written."
+          : "Delegation flow. Intake hands to Agent 1, which holds ticket.read. Agent 1 delegates to Agent 2, which holds ticket.write and files to Jira using a credential released from the Okta Privileged Access vault."}>
         <defs>
           <Grad id="g-in" from={NEUTRAL} to={TRIAGE_COLOR} x1={N.intake.cx} x2={N.agent1.cx} />
           <Grad id="g-del" from={TRIAGE_COLOR} to={FULFILL_COLOR} x1={N.agent1.cx} x2={N.agent2.cx} />
@@ -264,10 +274,10 @@ export default function AgentFlowGraph({ events }: { events: ActivityEvent[] }) 
         </defs>
 
         <Edge d={EDGE_INTAKE} gradId="g-in" status={state.edges.intakeToAgent1.status} reduced={reduced} />
-        <Edge d={EDGE_VAULT} gradId="g-vault" status={state.vaultBadge} reduced={reduced} />
+        {!violation && <Edge d={EDGE_VAULT} gradId="g-vault" status={state.vaultBadge} reduced={reduced} />}
         <Edge d={EDGE_DELEGATE} gradId="g-del" status={delegate} reduced={reduced} />
         <Edge d={EDGE_JIRA} gradId="g-jira" status={state.edges.agent2ToJira.status} reduced={reduced} />
-        <DeniedBranch d={EDGE_DENIED} active={deniedActive} reduced={reduced} />
+        {violation && <DeniedBranch d={EDGE_DENIED} active={deniedActive} reduced={reduced} />}
         <OktaConnector d={OKTA_CONN} to={OKTA_MID}
           active={delegate === "running" || delegate === "ok"} flowing={delegate === "running"} reduced={reduced} />
 
@@ -282,14 +292,17 @@ export default function AgentFlowGraph({ events }: { events: ActivityEvent[] }) 
           style={{ fontFamily: "var(--font-mono)" }}>
           {state.edges.agent2ToJira.scope ?? "ticket.write"}
         </text>
-        <text x={N.agent1.cx + 14} y={(LANE + NH / 2 + N.denied.cy) / 2 + 4} fontSize={10.5}
-          fontWeight={600} fill={deniedActive ? BAD : "#4A5462"} style={{ fontFamily: "var(--font-mono)" }}>
-          ticket.write
-        </text>
+        {violation && (
+          <text x={N.agent1.cx + 14} y={(LANE + NH / 2 + N.denied.cy) / 2 + 4} fontSize={10.5}
+            fontWeight={600} fill={deniedActive ? BAD : "#4A5462"}
+            style={{ fontFamily: "var(--font-mono)" }}>
+            ticket.write
+          </text>
+        )}
 
         <Node k="okta" status={delegate} label={labels.okta} hover={hoverNode} setHover={setHoverNode} />
-        <Node k="vault" status={state.vaultBadge} label={labels.vault} hover={hoverNode} setHover={setHoverNode} />
-        <Node k="denied" status={deniedActive ? "error" : "idle"} label={labels.denied} hover={hoverNode} setHover={setHoverNode} />
+        {!violation && <Node k="vault" status={state.vaultBadge} label={labels.vault} hover={hoverNode} setHover={setHoverNode} />}
+        {violation && <Node k="denied" status={deniedActive ? "error" : "idle"} label={labels.denied} hover={hoverNode} setHover={setHoverNode} />}
         <Node k="intake" status={state.nodes.intake} label={labels.intake} hover={hoverNode} setHover={setHoverNode} />
         <Node k="agent1" status={state.nodes.agent1} label={labels.agent1} hover={hoverNode} setHover={setHoverNode} />
         <Node k="agent2" status={state.nodes.agent2} label={labels.agent2} hover={hoverNode} setHover={setHoverNode} />

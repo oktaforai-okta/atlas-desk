@@ -38,12 +38,18 @@ export interface Ticket {
   status: "new" | "working" | "resolved";
   issueKey?: string;
   issueUrl?: string;
-  outcome?: "auto_resolved" | "routed"; // set once the run finishes
+  outcome?: "auto_resolved" | "routed" | "blocked"; // set once the run finishes
   resolution?: string;                   // customer reply the agent sent
+  blockedError?: string;                 // Okta error code, when a run was blocked
   createdAgo: string;
 }
 
 export const ORCH = process.env.NEXT_PUBLIC_ORCHESTRATOR_URL || "";
+
+/** The two narratives. `normal` gets the work done by delegating; `violation` has
+ *  the read-only agent try to write, get refused by Okta, and stop. Keeping them
+ *  separate is the point: a refusal shown on every run reads as decoration. */
+export type RunMode = "normal" | "violation";
 
 // ---------------------------------------------------------------------------
 // Bridge a completed run over to /tokens, which is a separate page and so loses
@@ -62,7 +68,8 @@ export function captureRun(events: ActivityEvent[]) {
   // only steps that carry credentials or a denial matter downstream; keeping the
   // payload small avoids the ~5MB sessionStorage ceiling on long sessions
   const keep = events.filter(
-    (e) => e.raw_tokens || e.data?.denied || e.step === "write_denied",
+    (e) => e.raw_tokens || e.data?.denied || e.step === "write_denied"
+      || e.step === "blocked",
   );
   if (!keep.length) return;
   try {
@@ -195,12 +202,12 @@ function mockResolution(t: Ticket): string {
 }
 
 /** Mirrors the backend's step list exactly, so demo and live stay in lockstep. */
-function sequence(t: Ticket): ActivityEvent[] {
+function sequence(t: Ticket, mode: RunMode = "normal"): ActivityEvent[] {
   const team = teamById[t.id] || "Software";
   const issueKey = `ITSD-${120 + (incidentCounter % 60)}`;
   const auto = mockSelfServiceable(t);
   const resolution = auto ? mockResolution(t) : "";
-  return [
+  const shared: ActivityEvent[] = [
     { step: "inbound", actor: "Intake", actorKind: "intake", primary: true,
       plain: "Received via intake API", tech: `${t.id} ingested from the external ticketing system` },
     { step: "read_grant", actor: "Agent 1", actorKind: "triage", primary: true,
@@ -215,13 +222,29 @@ function sequence(t: Ticket): ActivityEvent[] {
       plain: `Classified as ${team} · routed to the ${team} team`,
       tech: "Claude classified the ticket and judged whether it is self-serviceable",
       data: { department: team, self_serviceable: auto } },
-    { step: "write_denied", actor: "Agent 1", actorKind: "triage", primary: true,
-      plain: `Write refused by Okta · Agent 1 cannot hold ${WRITE}`,
-      tech: "Least privilege is enforced by Okta policy, not by this application.",
-      data: { denied: true, http_status: 401, error: "access_denied",
-        error_description: "Policy evaluation failed for this request, please check the policy configurations.",
-        attempted_scope: WRITE },
-      system_log_id: "app.oauth2.as.consent.grant.deny" },
+  ];
+
+  // VIOLATION: the read-only agent asks for write authority and is refused. The
+  // run ends there, so nothing is filed. Mirrors the backend branch.
+  if (mode === "violation") {
+    return [...shared,
+      { step: "write_denied", actor: "Agent 1", actorKind: "triage", primary: true,
+        plain: `Refused by Okta · Agent 1 cannot hold ${WRITE}`,
+        tech: `Agent 1 asked Okta for ${WRITE} and was refused. Its connection permits the read scope and nothing else.`,
+        data: { denied: true, http_status: 400, error: "invalid_scope",
+          error_description: `The following scopes are not allowed for this request: [${WRITE}].`,
+          attempted_scope: WRITE },
+        system_log_id: "app.oauth2.as.consent.grant.deny" },
+      { step: "blocked", actor: "Atlas", actorKind: "okta", primary: true,
+        plain: "Stopped by policy · nothing was written",
+        data: { blocked: true, wrote_to_jira: false, attempted_scope: WRITE,
+          error: "invalid_scope" },
+        tech: "The ticket was never filed. Agent 1 held read authority only, so no credential existed to perform the write it attempted." },
+    ];
+  }
+
+  // NORMAL: the work gets done, by delegating rather than over-reaching.
+  return [...shared,
     { step: "a2a_delegate", actor: "Agent 1 → Agent 2", actorKind: "triage", primary: true,
       plain: "Delegated to the write-capable agent",
       tech: "The act claim records that Agent 1 initiated this, so the eventual write stays attributable to it.",
@@ -256,6 +279,9 @@ function sequence(t: Ticket): ActivityEvent[] {
 export type PipelineResult = {
   issueKey?: string; issueUrl?: string; team?: string;
   autoResolved?: boolean; resolution?: string; failed?: boolean;
+  /** the violation path was stopped by Okta policy; nothing was written */
+  blocked?: boolean;
+  blockedError?: string;
 };
 
 // Accumulate result fields as events stream in (works for live + mock alike).
@@ -267,12 +293,17 @@ function absorb(result: PipelineResult, e: ActivityEvent) {
   if (d.team) result.team = String(d.team);
   if ("auto_resolved" in d) result.autoResolved = Boolean(d.auto_resolved);
   if (d.resolution) result.resolution = String(d.resolution);
+  if (d.blocked) {
+    result.blocked = true;
+    if (d.error) result.blockedError = String(d.error);
+  }
 }
 
 export async function runPipeline(
   ticket: Ticket,
   onEvent: (e: ActivityEvent) => void,
   signal?: AbortSignal,
+  mode: RunMode = "normal",
 ): Promise<PipelineResult> {
   const result: PipelineResult = {};
   if (ORCH) {
@@ -280,7 +311,7 @@ export async function runPipeline(
     // not a seed ticket. This is what makes "what you see = what ran" true.
     const qs = new URLSearchParams({
       ticket_id: ticket.id, title: ticket.subject,
-      body: ticket.body, requester: ticket.requester,
+      body: ticket.body, requester: ticket.requester, mode,
     });
     const res = await fetch(`${ORCH}/api/run?${qs.toString()}`, { signal });
     if (!res.ok || !res.body) {
@@ -321,7 +352,7 @@ export async function runPipeline(
     }
     return result;
   }
-  for (const e of sequence(ticket)) {
+  for (const e of sequence(ticket, mode)) {
     if (signal?.aborted) return result;
     onEvent({ ...e, status: "running", ts: Date.now() });
     await delay(340);

@@ -17,7 +17,12 @@ export interface FlowEdgeState {
   systemLogId: string | null;
 }
 
+/** Which narrative this run told. Derived from the events rather than passed in,
+ *  so the graph can never disagree with what actually happened. */
+export type FlowPath = "none" | "normal" | "violation";
+
 export interface AgentFlowState {
+  path: FlowPath;
   nodes: { intake: FlowStatus; agent1: FlowStatus; agent2: FlowStatus; jira: FlowStatus };
   edges: {
     intakeToAgent1: FlowEdgeState;  // bootstrap, ticket.read
@@ -71,7 +76,13 @@ export function deriveAgentFlowState(events: ActivityEvent[]): AgentFlowState {
   const done = by.get("done");
   const failure = by.get("error");
 
+  const blocked = by.get("blocked");
   const similar = jiraRead?.data?.similar;
+
+  // A violation run is identifiable by the presence of the refusal, and it never
+  // reaches Agent 2. Normal runs contain no refusal at all.
+  const path: FlowPath = (denied || blocked) ? "violation"
+    : (inbound || readGrant) ? "normal" : "none";
 
   const nodes = {
     intake: foldStatus([inbound]),
@@ -92,6 +103,7 @@ export function deriveAgentFlowState(events: ActivityEvent[]): AgentFlowState {
   };
 
   const base = {
+    path,
     edges,
     writeDenied,
     vaultBadge: foldStatus([vault]),
@@ -99,7 +111,8 @@ export function deriveAgentFlowState(events: ActivityEvent[]): AgentFlowState {
   };
 
   if (!failure) {
-    return { ...base, nodes, complete: done?.status === "ok", errorMessage: null };
+    const terminal = path === "violation" ? blocked : done;
+    return { ...base, nodes, complete: terminal?.status === "ok", errorMessage: null };
   }
   return {
     ...base,

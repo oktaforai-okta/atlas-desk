@@ -146,3 +146,40 @@ describe("illustrativeChain", () => {
       .toEqual(buildChain(fullRun()).map((s) => s.kind));
   });
 });
+
+// --- the violation path's chain ---
+//
+// A blocked run produces exactly one credential (the read token it was given)
+// plus the refusal. If a write token ever appeared here, the boundary failed.
+
+describe("buildChain on a violation run", () => {
+  const violation = [
+    ev({ step: "read_grant", raw_tokens: { t1: signed() },
+         data: { scope: READ, holder: "wlpONE" } }),
+    ev({ step: "write_denied",
+         data: { denied: true, http_status: 400, error: "invalid_scope",
+                 error_description: "The following scopes are not allowed for this request: [ticket.write].",
+                 attempted_scope: WRITE } }),
+  ];
+
+  it("yields the read token and the refusal, nothing more", () => {
+    const c = buildChain(violation);
+    expect(c).toHaveLength(2);
+    expect(c.map((s) => s.kind)).toEqual(["Access Token", "Denied"]);
+  });
+
+  it("contains no write credential", () => {
+    const c = buildChain(violation);
+    expect(c.filter((s) => s.token && s.scope === WRITE)).toHaveLength(0);
+  });
+
+  it("surfaces Okta's own refusal text", () => {
+    const d = buildChain(violation).find((s) => s.kind === "Denied")!.denial!;
+    expect(d.error).toBe("invalid_scope");
+    expect(d.description).toContain("not allowed for this request");
+  });
+
+  it("is shorter than a normal run's chain", () => {
+    expect(buildChain(violation).length).toBeLessThan(buildChain(fullRun()).length);
+  });
+});

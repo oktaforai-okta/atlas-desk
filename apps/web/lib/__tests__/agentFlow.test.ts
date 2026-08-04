@@ -132,3 +132,66 @@ describe("terminal states", () => {
     expect(s.nodes.agent1).toBe("ok");
   });
 });
+
+// --- the two narratives ---
+//
+// The graph reads its path from the events rather than being told, so it can
+// never disagree with what actually happened. These pin that mapping, and pin
+// the property that matters most on a violation: the downstream nodes stay dark,
+// because staying dark is how the diagram says "the write did not happen".
+
+describe("run path", () => {
+  const normal = [
+    ev("inbound"), ev("read_grant", "ok", { data: { scope: "ticket.read" } }),
+    ev("jira_read"), ev("classify"), ev("a2a_delegate"),
+    ev("write_grant", "ok", { data: { scope: "ticket.write" } }),
+    ev("opa_vault"), ev("jira_write"), ev("done"),
+  ];
+  const violation = [
+    ev("inbound"), ev("read_grant", "ok", { data: { scope: "ticket.read" } }),
+    ev("jira_read"), ev("classify"),
+    ev("write_denied", "ok", { data: { denied: true, error: "invalid_scope" } }),
+    ev("blocked", "ok", { data: { blocked: true, wrote_to_jira: false } }),
+  ];
+
+  it("is none before anything runs", () => {
+    expect(deriveAgentFlowState([]).path).toBe("none");
+  });
+
+  it("is normal for a run with no refusal", () => {
+    expect(deriveAgentFlowState(normal).path).toBe("normal");
+  });
+
+  it("is violation as soon as a refusal appears", () => {
+    expect(deriveAgentFlowState(violation).path).toBe("violation");
+  });
+
+  it("leaves the write side dark on a violation", () => {
+    // this is the evidence that nothing was written; if these light up the
+    // diagram is claiming work that did not happen
+    const s = deriveAgentFlowState(violation);
+    expect(s.nodes.agent2).toBe("idle");
+    expect(s.nodes.jira).toBe("idle");
+    expect(s.vaultBadge).toBe("idle");
+    expect(s.edges.agent2ToJira.status).toBe("idle");
+  });
+
+  it("lights the whole path on a normal run", () => {
+    const s = deriveAgentFlowState(normal);
+    expect(s.nodes.agent2).toBe("ok");
+    expect(s.nodes.jira).toBe("ok");
+    expect(s.writeDenied.attempted).toBe(false);
+  });
+
+  it("completes on blocked for a violation, not on done", () => {
+    // a violation run never emits `done`, so keying completion off it would
+    // leave the graph permanently mid-flight
+    expect(deriveAgentFlowState(violation).complete).toBe(true);
+    expect(deriveAgentFlowState(normal).complete).toBe(true);
+  });
+
+  it("does not complete while the refusal is still in flight", () => {
+    const partial = violation.slice(0, 5).concat(ev("write_denied", "running"));
+    expect(deriveAgentFlowState(partial).complete).toBe(false);
+  });
+});

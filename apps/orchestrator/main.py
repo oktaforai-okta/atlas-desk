@@ -219,7 +219,7 @@ def live_ready() -> bool:
 # authorize nothing outside the narrative. That is what makes publishing them for
 # inspection acceptable HERE. It is not a pattern to copy for tokens that actually
 # grant access to something.
-_LAST_RUN: dict = {"events": [], "captured_at": None, "mode": None}
+_LAST_RUN: dict = {"events": [], "captured_at": None, "mode": None, "path": None}
 
 
 def _unexpired(events: list[dict]) -> list[dict]:
@@ -279,9 +279,24 @@ async def gen(seed: int = 0):
     return JSONResponse(generate_ticket(seed).public())
 
 
+# The two narratives the demo tells.
+#
+#   NORMAL     the work gets done. Agent 1 reads and delegates, Agent 2 writes.
+#              No refusal appears, because none occurs.
+#   VIOLATION  Agent 1 tries to write instead of delegating. Okta refuses and the
+#              run STOPS. Nothing reaches Jira.
+#
+# Keeping these separate matters: a refusal emitted on every run, including the
+# successful ones, reads as decoration. A refusal that only appears when an agent
+# actually over-reaches, and that visibly prevents the write, is evidence.
+MODE_NORMAL = "normal"
+MODE_VIOLATION = "violation"
+
+
 @app.get("/api/run")
 async def run(request: Request, ticket_id: str = "", seed: int = 0,
-              title: str = "", body: str = "", requester: str = ""):
+              title: str = "", body: str = "", requester: str = "",
+              mode: str = MODE_NORMAL):
     ip = (request.headers.get("x-forwarded-for", "").split(",")[0].strip()
           or (request.client.host if request.client else "unknown"))
     if _rate_limited(ip):
@@ -289,23 +304,28 @@ async def run(request: Request, ticket_id: str = "", seed: int = 0,
         return JSONResponse({"error": "rate_limited",
                              "detail": f"max {RATE_LIMIT_N} runs per "
                                        f"{RATE_LIMIT_WINDOW}s"}, status_code=429)
+    if mode not in (MODE_NORMAL, MODE_VIOLATION):
+        return JSONResponse({"error": "invalid_mode",
+                             "detail": f"mode must be {MODE_NORMAL} or {MODE_VIOLATION}"},
+                            status_code=400)
     # When the client sends the actual inbound ticket, classify/file THAT, so
     # what's on screen is exactly what Claude triages and files. Falls back to a
     # seed ticket only when no content is provided.
     inbound = ({"id": ticket_id or "INC-0000", "title": title, "body": body,
                 "requester": requester} if title and body else None)
     stream = EventStream()
-    asyncio.create_task(_drive(stream, seed, inbound))
+    asyncio.create_task(_drive(stream, seed, inbound, mode))
     return StreamingResponse(stream.stream(), media_type="text/event-stream")
 
 
-async def _drive(stream: EventStream, seed: int, inbound: Optional[dict] = None):
+async def _drive(stream: EventStream, seed: int, inbound: Optional[dict] = None,
+                 mode: str = MODE_NORMAL):
     try:
         if live_ready():
-            await _run_live(stream, seed, inbound)
+            await _run_live(stream, seed, inbound, mode)
         else:
-            log.info("running demo path; missing env: %s", missing_live_env())
-            await _run_demo(stream, seed, inbound)
+            log.info("running demo path (%s); missing env: %s", mode, missing_live_env())
+            await _run_demo(stream, seed, inbound, mode)
     except Exception as e:  # never hang the stream
         log.exception("pipeline failed")
         await stream.emit(ActivityEvent("error", "Atlas", "okta", f"Pipeline error: {e}",
@@ -315,8 +335,10 @@ async def _drive(stream: EventStream, seed: int, inbound: Optional[dict] = None)
         # chain-of-custody view reflects reality rather than falling back to examples.
         if stream.captured:
             _LAST_RUN.update({"events": stream.captured, "captured_at": time.time(),
-                              "mode": "live" if live_ready() else "demo"})
-            log.info("retained %d credential events for /api/last-run", len(stream.captured))
+                              "mode": "live" if live_ready() else "demo",
+                              "path": mode})
+            log.info("retained %d credential events (%s) for /api/last-run",
+                     len(stream.captured), mode)
         await stream.close()
 
 
@@ -351,7 +373,8 @@ def _naive_self_serviceable(title: str, body: str) -> bool:
 
 
 # ---------------------------------------------------------------- demo path
-async def _run_demo(stream: EventStream, seed: int, inbound: Optional[dict] = None):
+async def _run_demo(stream: EventStream, seed: int, inbound: Optional[dict] = None,
+                    mode: str = MODE_NORMAL):
     if inbound:
         t = types.SimpleNamespace(id=inbound["id"], title=inbound["title"], body=inbound["body"])
     else:
@@ -414,15 +437,34 @@ async def _run_demo(stream: EventStream, seed: int, inbound: Optional[dict] = No
                       data={"department": dept, "self_serviceable": auto,
                             "reason": ("Fixable by the user with instructions" if auto
                                        else "Needs a human: physical or entitlement change")}),
-        ActivityEvent("write_denied", "Agent 1", "triage",
-                      f"Write refused by Okta · Agent 1 cannot hold {WRITE_SCOPE}", primary=True,
-                      tech=f"Agent 1 asked Okta for {WRITE_SCOPE} and was refused. Least privilege "
-                           f"is enforced by policy, not by this application.",
-                      data={"denied": True, "http_status": 401, "error": "access_denied",
-                            "error_description": "Policy evaluation failed for this request, "
-                                                 "please check the policy configurations.",
-                            "attempted_scope": WRITE_SCOPE},
-                      system_log_id="app.oauth2.as.consent.grant.deny"),
+    ]
+
+    # VIOLATION: Agent 1 asks for write authority instead of delegating, is refused,
+    # and the run ends. No delegation, no write token, nothing filed.
+    if mode == MODE_VIOLATION:
+        for e in seq + [
+            ActivityEvent("write_denied", "Agent 1", "triage",
+                          f"Refused by Okta · Agent 1 cannot hold {WRITE_SCOPE}", primary=True,
+                          tech=f"Agent 1 asked Okta for {WRITE_SCOPE} and was refused. Its "
+                               "connection permits the read scope and nothing else. Enforced by "
+                               "Okta policy, not by this application.",
+                          data={"denied": True, "http_status": 400, "error": "invalid_scope",
+                                "error_description": "The following scopes are not allowed for "
+                                                     f"this request: [{WRITE_SCOPE}].",
+                                "attempted_scope": WRITE_SCOPE},
+                          system_log_id="app.oauth2.as.consent.grant.deny"),
+            ActivityEvent("blocked", "Atlas", "okta",
+                          "Stopped by policy · nothing was written", primary=True,
+                          data={"blocked": True, "wrote_to_jira": False,
+                                "attempted_scope": WRITE_SCOPE, "error": "invalid_scope"},
+                          tech="The ticket was never filed. Agent 1 held read authority only, so "
+                               "no credential existed to perform the write it attempted."),
+        ]:
+            await _emit_pair(stream, e)
+        return
+
+    # NORMAL: the work gets done, by delegating rather than over-reaching.
+    seq += [
         ActivityEvent("a2a_delegate", "Agent 1 → Agent 2", "triage",
                       "Delegated to the write-capable agent", primary=True,
                       tech="Agent 1 cannot write, so it delegates. The act claim records that "
@@ -470,7 +512,8 @@ async def _run_demo(stream: EventStream, seed: int, inbound: Optional[dict] = No
 
 
 # ---------------------------------------------------------------- live path
-async def _run_live(stream: EventStream, seed: int, inbound: Optional[dict] = None):
+async def _run_live(stream: EventStream, seed: int, inbound: Optional[dict] = None,
+                    mode: str = MODE_NORMAL):
     from jose import jwt as jose_jwt
     from llm.claude import classify, draft_comments, draft_resolution
     from okta.a2a_exchange import (mint_service_token, exchange_for_id_jag,
@@ -567,41 +610,66 @@ async def _run_live(stream: EventStream, seed: int, inbound: Optional[dict] = No
                       data={"department": dept, "urgency": urgency,
                             "self_serviceable": auto, "reason": reason}))
 
-    # ---- Agent 1 ATTEMPTS a write, and Okta refuses. The proof. ----
-    await stream.emit(ActivityEvent("write_denied", "Agent 1", "triage",
-                      f"Attempting {WRITE_SCOPE}…", status=STATUS_RUNNING, primary=True))
-    denial: dict = {}
-    if t1 and a1_jwk:
-        try:
-            # Target the resource Agent 1 CAN address, asking for the scope it
-            # cannot have. Pointing at the write lane instead yields invalid_target
-            # (no connection to that resource), which is true but reads like a
-            # config error rather than a permission refusal.
-            denial = attempt_denied_write(t1, a1_id, a1_jwk, OKTA_DOMAIN,
-                                          read_cas_issuer, read_resource, WRITE_SCOPE)
-        except Exception:
-            log.exception("denial probe raised")
-    was_denied = bool(denial.get("_denied"))
-    log.info("write denial probe: status=%s error=%s",
-             denial.get("_status"), denial.get("error"))
-    await stream.emit(ActivityEvent("write_denied", "Agent 1", "triage",
-                      (f"Write refused by Okta · Agent 1 cannot hold {WRITE_SCOPE}" if was_denied
-                       else "Write attempt inconclusive"),
-                      status=STATUS_OK if was_denied else STATUS_ERROR, primary=True,
-                      tech=(f"Agent 1 asked Okta for {WRITE_SCOPE} and was refused. It is not an "
-                            "authorized client on the write authorization server, and that scope "
-                            "does not exist on the servers where it is authorized. Least privilege "
-                            "is enforced by Okta policy, not by this application."
-                            if was_denied else
-                            "The write attempt did not return a denial. Check that the write lane "
-                            "still lists only Agent 2 in its policy."),
-                      data={"denied": was_denied, "http_status": denial.get("_status"),
-                            "error": denial.get("error"),
-                            "error_description": (denial.get("error_description")
-                                                  or denial.get("errorSummary")),
-                            "attempted_scope": WRITE_SCOPE},
-                      system_log_id="app.oauth2.as.consent.grant.deny" if was_denied else None))
+    # ================= VIOLATION PATH: Agent 1 over-reaches and is stopped ======
+    #
+    # Agent 1 skips the delegation it is supposed to perform and asks Okta for
+    # write authority directly. Okta refuses, and the run ends here: no delegation,
+    # no write token, no vault release, nothing filed in Jira. The refusal is only
+    # meaningful because it has that consequence.
+    if mode == MODE_VIOLATION:
+        await stream.emit(ActivityEvent("write_denied", "Agent 1", "triage",
+                          f"Requesting {WRITE_SCOPE} directly…", status=STATUS_RUNNING,
+                          primary=True))
+        denial: dict = {}
+        if t1 and a1_jwk:
+            try:
+                # Target the resource Agent 1 CAN address, asking for the scope it
+                # cannot have. Pointing at the write lane instead yields invalid_target
+                # (no connection to that resource), which is true but reads like a
+                # config error rather than a permission refusal.
+                denial = attempt_denied_write(t1, a1_id, a1_jwk, OKTA_DOMAIN,
+                                              read_cas_issuer, read_resource, WRITE_SCOPE)
+            except Exception:
+                log.exception("denial probe raised")
+        was_denied = bool(denial.get("_denied"))
+        log.info("VIOLATION: write attempt status=%s error=%s",
+                 denial.get("_status"), denial.get("error"))
+        await stream.emit(ActivityEvent("write_denied", "Agent 1", "triage",
+                          (f"Refused by Okta · Agent 1 cannot hold {WRITE_SCOPE}" if was_denied
+                           else "Write attempt was NOT refused"),
+                          status=STATUS_OK if was_denied else STATUS_ERROR, primary=True,
+                          tech=(f"Agent 1 asked Okta for {WRITE_SCOPE} and was refused. Its "
+                                "connection permits the read scope and nothing else, and the write "
+                                "scope is published only on an authorization server where Agent 1 "
+                                "is not an authorized client. Enforced by Okta policy, not by this "
+                                "application."
+                                if was_denied else
+                                "The write was NOT refused. The capability boundary is not being "
+                                "enforced: check that the write scope is absent from Agent 1's "
+                                "connection and that the write lane lists only Agent 2."),
+                          data={"denied": was_denied, "http_status": denial.get("_status"),
+                                "error": denial.get("error"),
+                                "error_description": (denial.get("error_description")
+                                                      or denial.get("errorSummary")),
+                                "attempted_scope": WRITE_SCOPE},
+                          system_log_id="app.oauth2.as.consent.grant.deny" if was_denied else None))
 
+        await _emit_pair(stream, ActivityEvent("blocked", "Atlas", "okta",
+                         ("Stopped by policy · nothing was written" if was_denied
+                          else "Boundary NOT enforced · investigate immediately"),
+                         primary=True, status=STATUS_OK if was_denied else STATUS_ERROR,
+                         data={"blocked": was_denied, "wrote_to_jira": False,
+                               "attempted_scope": WRITE_SCOPE,
+                               "error": denial.get("error")},
+                         tech=("The ticket was never filed. Agent 1 held read authority only, so "
+                               "the write it attempted could not be issued a token, and no "
+                               "credential existed to perform it. Compare this with a normal run, "
+                               "where the same agent reaches the same outcome by delegating."
+                               if was_denied else
+                               "A write that should have been impossible was not refused.")))
+        return
+
+    # ================= NORMAL PATH: the work gets done ==========================
     # ---- Agent 1 delegates to Agent 2 ----
     await stream.emit(ActivityEvent("a2a_delegate", "Agent 1 → Agent 2", "triage",
                       "Delegating to the write-capable agent", status=STATUS_RUNNING, primary=True))

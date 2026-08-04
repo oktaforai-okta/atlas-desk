@@ -2,12 +2,13 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { Plus, ShieldCheck, User, CircleDot, Sparkles, Forward, MailCheck, KeyRound } from "lucide-react";
+import { Plus, ShieldCheck, User, CircleDot, Sparkles, Forward, MailCheck, KeyRound,
+  ShieldOff, Ban } from "lucide-react";
 import AgentFlowGraph from "@/components/AgentFlowGraph";
 import TicketActivity from "@/components/TicketActivity";
 import {
   runPipeline, nextTicket, captureRun, SEED_QUEUE, ORCH,
-  type ActivityEvent, type Ticket,
+  type ActivityEvent, type Ticket, type RunMode,
 } from "@/lib/events";
 
 const STATUS_META: Record<Ticket["status"], { label: string; dot: string; text: string }> = {
@@ -21,6 +22,7 @@ const STATUS_META: Record<Ticket["status"], { label: string; dot: string; text: 
 function displayMeta(t: Ticket): { label: string; dot: string; text: string } {
   if (t.outcome === "auto_resolved") return { label: "Auto-resolved", dot: "bg-ok", text: "text-ok" };
   if (t.outcome === "routed") return { label: "Routed", dot: "bg-accent", text: "text-accent" };
+  if (t.outcome === "blocked") return { label: "Blocked", dot: "bg-bad", text: "text-bad" };
   return STATUS_META[t.status];
 }
 
@@ -33,7 +35,7 @@ export default function ServiceDesk() {
   const [queue, setQueue] = useState<Ticket[]>(SEED_QUEUE);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [events, setEvents] = useState<ActivityEvent[]>([]);
-  const [running, setRunning] = useState(false);
+  const [running, setRunning] = useState<RunMode | null>(null);
   const [mode, setMode] = useState<Mode>(ORCH ? "checking" : "demo");
   const abort = useRef<AbortController | null>(null);
 
@@ -49,7 +51,7 @@ export default function ServiceDesk() {
     return () => { alive = false; };
   }, []);
 
-  async function simulateInbound() {
+  async function simulateInbound(mode: RunMode = "normal") {
     if (running) return;
     abort.current?.abort();
     const ac = new AbortController();
@@ -58,7 +60,7 @@ export default function ServiceDesk() {
     setQueue((q) => [t, ...q]);
     setSelectedId(t.id);
     setEvents([]);
-    setRunning(true);
+    setRunning(mode);
     setQueue((q) => q.map((x) => (x.id === t.id ? { ...x, status: "working" } : x)));
     // Kept alongside React state (which is a stale closure inside this async
     // function by the time the stream closes) so captureRun sees every event
@@ -68,22 +70,26 @@ export default function ServiceDesk() {
       const res = await runPipeline(t, (e) => {
         collected.push(e);
         setEvents((prev) => [...prev, e]);
-      }, ac.signal);
+      }, ac.signal, mode);
       captureRun(collected); // bridges this run's credentials over to /tokens
       // Only label an outcome when the run actually produced one. Setting
       // "routed" unconditionally rendered "Routed to  for a specialist" with an
       // empty team whenever the backend failed.
-      const done = !res.failed && (res.autoResolved !== undefined || !!res.issueKey);
+      const done = !res.failed && (res.autoResolved !== undefined || !!res.issueKey
+                                   || !!res.blocked);
       setQueue((q) =>
         q.map((x) =>
           x.id === t.id
             ? {
                 ...x,
                 status: res.autoResolved ? "resolved" : "working",
+                blockedError: res.blockedError,
                 team: res.team || x.team,
                 issueKey: res.issueKey,
                 issueUrl: res.issueUrl,
-                outcome: done ? (res.autoResolved ? "auto_resolved" : "routed") : undefined,
+                outcome: !done ? undefined
+                  : res.blocked ? "blocked"
+                  : res.autoResolved ? "auto_resolved" : "routed",
                 resolution: res.resolution,
               }
             : x,
@@ -100,7 +106,7 @@ export default function ServiceDesk() {
     } finally {
       // Always re-enable the control. Without this, one failed fetch left the
       // primary button stuck on "Processing…" until a full page reload.
-      setRunning(false);
+      setRunning(null);
     }
   }
 
@@ -125,14 +131,28 @@ export default function ServiceDesk() {
           </div>
           <p className="mt-0.5 text-2xs text-mute">Autonomous triage &amp; resolution, secured by Okta</p>
         </div>
-        <button
-          onClick={simulateInbound}
-          disabled={running}
-          className="inline-flex items-center gap-1.5 rounded-lg bg-gradient-to-b from-accent to-[#5B86E8] px-3.5 py-2 text-[15px] font-medium text-white shadow-[0_2px_12px_-2px_rgba(122,162,255,0.5)] transition hover:brightness-110 disabled:opacity-50 disabled:shadow-none"
-        >
-          <Plus className="h-4 w-4" />
-          {running ? "Processing…" : "Simulate inbound ticket"}
-        </button>
+        <div className="flex items-center gap-2">
+          {/* Two narratives, two buttons. The second is the one worth watching:
+              it shows what happens when an agent exceeds its authority. */}
+          <button
+            onClick={() => simulateInbound("normal")}
+            disabled={!!running}
+            title="Agent 1 reads and delegates; Agent 2 writes. The work gets done."
+            className="inline-flex items-center gap-1.5 rounded-lg bg-gradient-to-b from-accent to-[#5B86E8] px-3.5 py-2 text-[15px] font-medium text-white shadow-[0_2px_12px_-2px_rgba(122,162,255,0.5)] transition hover:brightness-110 disabled:opacity-50 disabled:shadow-none"
+          >
+            <Plus className="h-4 w-4" />
+            {running === "normal" ? "Processing…" : "Simulate inbound ticket"}
+          </button>
+          <button
+            onClick={() => simulateInbound("violation")}
+            disabled={!!running}
+            title="Agent 1 attempts the write itself instead of delegating. Okta refuses and nothing is filed."
+            className="inline-flex items-center gap-1.5 rounded-lg border border-bad/40 bg-bad/[0.08] px-3.5 py-2 text-[15px] font-medium text-bad transition hover:border-bad/70 hover:bg-bad/[0.14] disabled:opacity-50"
+          >
+            <ShieldOff className="h-4 w-4" />
+            {running === "violation" ? "Attempting…" : "Simulate policy violation"}
+          </button>
+        </div>
       </header>
 
       <div className="flex min-h-0 flex-1">
@@ -248,6 +268,28 @@ export default function ServiceDesk() {
                       )}
                     </div>
                   )}
+                </div>
+              )}
+
+              {selected.outcome === "blocked" && (
+                <div className="mt-5 max-w-3xl rounded-xl border border-bad/40 bg-bad/[0.07] p-4">
+                  <div className="flex items-center gap-2 text-[15px] font-semibold text-bad">
+                    <Ban className="h-4 w-4" /> Blocked by Okta policy
+                  </div>
+                  <div className="mt-1 text-[13px] text-mute">
+                    Agent 1 tried to write this ticket itself instead of delegating. It holds{" "}
+                    <span className="font-mono text-resolve">ticket.read</span> and nothing else, so
+                    Okta refused to issue a write token
+                    {selected.blockedError ? (
+                      <> (<span className="font-mono text-bad">{selected.blockedError}</span>)</>
+                    ) : null}
+                    . <span className="text-ink">Nothing was written to Jira.</span>
+                  </div>
+                  <div className="mt-2.5 text-2xs text-mute">
+                    The refusal came from Okta, not from this application. Run the same ticket
+                    normally and it gets filed, because Agent 1 delegates to an agent that is
+                    allowed to write.
+                  </div>
                 </div>
               )}
 

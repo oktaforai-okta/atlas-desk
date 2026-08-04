@@ -47,7 +47,35 @@ Two independent barriers, verified against a live tenant. The pipeline performs 
 
 **Why the read-only agent is still useful.** It cannot write, but it can *delegate*. The token Agent 2 ends up holding carries an `act` claim naming Agent 1 and, beneath that, the Intake Service. So the write is attributable to the agent that initiated it even though that agent could never have performed it. Least privilege and accountability at the same time, rather than a trade between them.
 
-## The nine-step pipeline
+## Two paths, one shared prefix
+
+The pipeline runs in one of two modes, selected by the caller
+(`GET /api/run?mode=normal|violation`). Both share the first four steps, so the
+only variable between them is whether the read-only agent delegates or
+over-reaches.
+
+| | normal | violation |
+|---|---|---|
+| Agent 1 granted `ticket.read` | yes | yes |
+| Agent 1 reads Jira | yes | yes |
+| Claude classifies and judges | yes | yes |
+| Agent 1 attempts a write | no | **yes, and Okta refuses** |
+| Delegation to Agent 2 | yes | no |
+| `ticket.write` issued | yes | no |
+| Vaulted credential released | yes | no |
+| Jira issue created | yes | **no** |
+
+The violation path terminating without a write is the point. An earlier version of
+this demo ran the refusal on *every* request, including successful ones, which made
+it read as decoration: the write happened anyway, immediately afterwards, by another
+route. Separating the paths means the refusal is only ever shown when it actually
+prevented something.
+
+`deriveAgentFlowState` in the frontend infers which path ran from the events rather
+than being told, so the diagram cannot disagree with what happened. On a violation
+it leaves Agent 2, the vault, and Jira unlit.
+
+## The nine-step pipeline (normal path)
 
 1. **`inbound`** A ticket arrives via the intake API. No Okta involvement yet.
 2. **`read_grant`** The Intake Service mints a bootstrap token scoped `ticket.read`, and Agent 1 holds it. A service client does this because workload principals may not use `client_credentials` at all (see below).
