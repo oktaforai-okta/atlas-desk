@@ -9,24 +9,59 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { KeyRound, Info, ArrowLeft } from "lucide-react";
+import { KeyRound, Info, ArrowLeft, ShieldCheck } from "lucide-react";
 import TokenCard from "@/components/TokenCard";
 import { buildChain, illustrativeChain, isIllustrative, type ChainStep } from "@/lib/chain";
-import { readCapturedRun } from "@/lib/events";
+import { readCapturedRun, fetchLastRun } from "@/lib/events";
+
+type Source = "this-run" | "last-run" | "examples";
 
 export default function TokensPage() {
   // Read on mount rather than during render: sessionStorage does not exist on the
   // server, and seeding state from it directly desynchronises the two renders.
   const [steps, setSteps] = useState<ChainStep[]>([]);
+  const [source, setSource] = useState<Source>("examples");
+  const [capturedAt, setCapturedAt] = useState<number | null>(null);
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    const captured = readCapturedRun();
-    setSteps(captured?.events?.length ? buildChain(captured.events) : illustrativeChain());
-    setReady(true);
+    let alive = true;
+    (async () => {
+      // 1. this tab's own run, which is what the viewer just watched happen
+      const mine = readCapturedRun();
+      if (mine?.events?.length) {
+        if (!alive) return;
+        setSteps(buildChain(mine.events));
+        setSource("this-run");
+        setCapturedAt(mine.capturedAt ?? null);
+        setReady(true);
+        return;
+      }
+      // 2. the orchestrator's last run, so a shared link still shows real tokens
+      const last = await fetchLastRun();
+      if (!alive) return;
+      if (last?.events?.length) {
+        setSteps(buildChain(last.events));
+        setSource("last-run");
+        setCapturedAt(last.capturedAt || null);
+      } else {
+        // 3. nothing has ever run against this backend
+        setSteps(illustrativeChain());
+        setSource("examples");
+      }
+      setReady(true);
+    })();
+    return () => { alive = false; };
   }, []);
 
   const illustrative = !ready || isIllustrative(steps);
+  const ago = (() => {
+    if (!capturedAt) return null;
+    const s = Math.max(0, Math.round((Date.now() - capturedAt) / 1000));
+    if (s < 60) return `${s}s ago`;
+    if (s < 3600) return `${Math.round(s / 60)}m ago`;
+    return `${Math.round(s / 3600)}h ago`;
+  })();
 
   return (
     <div className="mx-auto max-w-4xl px-8 py-8">
@@ -51,7 +86,7 @@ export default function TokensPage() {
         <span className="text-mute">Agent 2 only</span>
       </div>
 
-      {illustrative && (
+      {illustrative ? (
         <div className="mt-5 flex items-start gap-2 rounded-lg border border-warn/30 bg-warn/[0.06] px-3.5 py-3 text-[13px] text-warn">
           <Info className="mt-0.5 h-4 w-4 shrink-0" />
           <div>
@@ -62,6 +97,17 @@ export default function TokensPage() {
               Simulate a ticket
             </Link>{" "}
             to capture a real signed set.
+          </div>
+        </div>
+      ) : (
+        <div className="mt-5 flex items-start gap-2 rounded-lg border border-ok/30 bg-ok/[0.06] px-3.5 py-3 text-[13px] text-ok">
+          <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0" />
+          <div>
+            Real Okta-issued tokens, signed <span className="font-mono">RS256</span>
+            {source === "this-run"
+              ? ", captured from the run you just watched"
+              : ", from the most recent run against this orchestrator"}
+            {ago ? ` (${ago})` : ""}. Paste any of them into jwt.io to check them yourself.
           </div>
         </div>
       )}

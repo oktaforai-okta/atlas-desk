@@ -85,6 +85,25 @@ export function readCapturedRun(): CapturedRun | null {
   }
 }
 
+/** The orchestrator's most recent run.
+ *
+ *  sessionStorage is per-tab, so it only ever helps the tab that ran the pipeline.
+ *  Anyone following a shared link, opening a second tab, or returning later would
+ *  see illustrative placeholders and reasonably conclude the page is static. This
+ *  asks the backend instead, so the credentials shown are real for everybody. */
+export async function fetchLastRun(): Promise<CapturedRun | null> {
+  if (!ORCH) return null;
+  try {
+    const res = await fetch(`${ORCH}/api/last-run`);
+    if (!res.ok) return null;
+    const j = (await res.json()) as { events?: ActivityEvent[]; captured_at?: number };
+    if (!Array.isArray(j?.events) || j.events.length === 0) return null;
+    return { events: j.events, capturedAt: (j.captured_at ?? 0) * 1000 };
+  } catch {
+    return null;
+  }
+}
+
 // ---------------------------------------------------------------------------
 
 const POOL: Array<{ subject: string; body: string; requester: string; team: string }> = [
