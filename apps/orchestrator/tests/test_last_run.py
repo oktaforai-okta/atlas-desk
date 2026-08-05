@@ -45,9 +45,32 @@ class TestUnexpired:
         evs = [{"step": "a2a_delegate", "raw_tokens": {"idjag1": tok(DEAD), "t_res": tok(LIVE)}}]
         assert served(evs) == {"t_res"}
 
-    def test_drops_an_event_whose_tokens_are_all_dead(self):
-        evs = [{"step": "read_grant", "raw_tokens": {"t1": tok(DEAD)}}]
-        assert main._unexpired(evs) == []
+    def test_keeps_an_event_whose_tokens_are_all_dead(self):
+        """The step still happened, so the card must still render.
+
+        Dropping the whole event was the earlier behaviour and it broke the
+        narrative: ID-JAGs lapse in 5 minutes while access tokens last an hour, so
+        a quarter-hour-old run lost precisely the two delegation grants, and the
+        surviving card's copy still referred to "the grant above". The value is
+        withheld; the step is not.
+        """
+        evs = [{"step": "a2a_delegate", "raw_tokens": {"idjag1": tok(DEAD)}}]
+        out = main._unexpired(evs)
+        assert len(out) == 1
+        assert out[0]["raw_tokens"] is None
+        assert out[0]["expired_tokens"] == ["idjag1"]
+
+    def test_names_only_the_tokens_it_withheld(self):
+        evs = [{"step": "a2a_delegate",
+                "raw_tokens": {"idjag1": tok(DEAD), "t_res": tok(LIVE)}}]
+        out = main._unexpired(evs)
+        assert out[0]["expired_tokens"] == ["idjag1"]
+        assert set(out[0]["raw_tokens"]) == {"t_res"}
+
+    def test_adds_no_expired_key_when_nothing_lapsed(self):
+        """Absence of the key is how the UI knows there is nothing to explain."""
+        evs = [{"step": "read_grant", "raw_tokens": {"t1": tok(LIVE)}}]
+        assert "expired_tokens" not in main._unexpired(evs)[0]
 
     def test_retains_the_denial_step_which_has_no_token(self):
         """The refusal is the point of the demo and carries no credential, so it
