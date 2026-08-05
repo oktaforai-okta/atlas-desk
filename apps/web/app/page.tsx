@@ -7,7 +7,7 @@ import { Plus, ShieldCheck, User, CircleDot, Sparkles, Forward, MailCheck, KeyRo
 import AgentFlowGraph from "@/components/AgentFlowGraph";
 import TicketActivity from "@/components/TicketActivity";
 import {
-  runPipeline, nextTicket, captureRun, SEED_QUEUE, ORCH,
+  runPipeline, nextTicket, captureRun, clearCapturedRun, SEED_QUEUE, ORCH,
   type ActivityEvent, type Ticket, type RunMode,
 } from "@/lib/events";
 
@@ -60,6 +60,7 @@ export default function ServiceDesk() {
     setQueue((q) => [t, ...q]);
     setSelectedId(t.id);
     setEvents([]);
+    clearCapturedRun(); // a fresh run starts with nothing to inspect until it produces real tokens
     setRunning(mode);
     setQueue((q) => q.map((x) => (x.id === t.id ? { ...x, status: "working" } : x)));
     // Kept alongside React state (which is a stale closure inside this async

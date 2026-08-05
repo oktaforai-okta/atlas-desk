@@ -52,50 +52,45 @@ export const ORCH = process.env.NEXT_PUBLIC_ORCHESTRATOR_URL || "";
 export type RunMode = "normal" | "violation";
 
 // ---------------------------------------------------------------------------
-// Bridge a completed run over to /tokens, which is a separate page and so loses
-// component state on navigation. Stores the raw events; /tokens derives the
-// chain from them (see lib/chain.ts) rather than this module guessing a shape.
-
-export const RUN_KEY = "atlas:lastRun";
-
-// Per-tab on purpose. A credential belongs to the run that produced it and to the
-// browser that watched it happen. An earlier version had the server retain the
-// last run so any visitor saw real tokens; that removed one confusion (a page
-// that looked static) and created a worse one (credentials handed to someone who
-// had run nothing). The empty state on /tokens is the right answer instead.
+// Bridge a completed run over to /tokens, which is a separate page. Held in
+// MEMORY for the life of this SPA session only, deliberately NOT sessionStorage
+// or localStorage, and that is load-bearing for the demo's credibility:
+//
+//   • A full page reload, a new tab, or a fresh visitor sees NOTHING. There is no
+//     stored run to replay, so any token shown on /tokens can only be one this
+//     session just produced. That is how you prove the credentials are captured
+//     live from a real run, not staged theater.
+//   • Client-side navigation (the "Inspect the tokens from this run" link) keeps
+//     the same JS context, so the run you just watched is still there to inspect.
+//   • clearCapturedRun() runs at the start of every simulation, so one run's
+//     tokens never linger into the next.
 
 export interface CapturedRun {
   events: ActivityEvent[];
   capturedAt: number;
 }
 
+let capturedRun: CapturedRun | null = null;
+
 export function captureRun(events: ActivityEvent[]) {
-  if (typeof window === "undefined") return;
-  // only steps that carry credentials or a denial matter downstream; keeping the
-  // payload small avoids the ~5MB sessionStorage ceiling on long sessions
+  // Only steps that carry a credential or a denial matter downstream. If a run
+  // produced none (e.g. the orchestrator errored), capture nothing, so /tokens
+  // shows its empty state rather than the previous run's leftovers.
   const keep = events.filter(
-    (e) => e.raw_tokens || e.data?.denied || e.step === "write_denied"
-      || e.step === "blocked",
+    (e) => e.raw_tokens || e.data?.denied || e.step === "write_denied" || e.step === "blocked",
   );
-  if (!keep.length) return;
-  try {
-    const payload: CapturedRun = { events: keep, capturedAt: Date.now() };
-    window.sessionStorage.setItem(RUN_KEY, JSON.stringify(payload));
-  } catch {
-    // sessionStorage unavailable; /tokens falls back to illustrative examples
-  }
+  capturedRun = keep.length ? { events: keep, capturedAt: Date.now() } : null;
+}
+
+/** Drop any captured run. Called when a new simulation begins, so the tokens page
+ *  never shows a stale run and there is nothing to inspect until this run produces
+ *  something real. */
+export function clearCapturedRun() {
+  capturedRun = null;
 }
 
 export function readCapturedRun(): CapturedRun | null {
-  if (typeof window === "undefined") return null;
-  try {
-    const raw = window.sessionStorage.getItem(RUN_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as CapturedRun;
-    return Array.isArray(parsed?.events) ? parsed : null;
-  } catch {
-    return null;
-  }
+  return capturedRun;
 }
 
 // ---------------------------------------------------------------------------

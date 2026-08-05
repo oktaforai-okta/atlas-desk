@@ -30,8 +30,8 @@ import { useResolvedTheme, vizPalette, withAlpha, type VizPalette } from "@/lib/
 
 // ---- fixed geometry (viewBox 0 0 1360 360) ----
 const LANE = 188;
-const NW = 190;
-const NH = 84;
+const NW = 208;
+const NH = 88;
 type NodeKey = "inbound" | "svc" | "agent1" | "agent2" | "jira" | "okta" | "vault" | "denied";
 type Hue = keyof Pick<VizPalette, "neutral" | "service" | "triage" | "fulfill" | "okta" | "vault" | "bad">;
 
@@ -44,14 +44,14 @@ const NODES: Record<NodeKey, {
   cx: number; cy: number; w: number; h: number; hue: Hue;
   name: string; kind: string; Icon: typeof Bot;
 }> = {
-  inbound: { cx: 105, cy: LANE, w: NW, h: NH, hue: "neutral", name: "Inbound", kind: "external event", Icon: Inbox },
-  svc: { cx: 375, cy: LANE, w: NW, h: NH, hue: "service", name: "Intake Service", kind: "service client", Icon: Server },
-  agent1: { cx: 645, cy: LANE, w: NW, h: NH, hue: "triage", name: "Triage Agent", kind: "read only", Icon: Bot },
-  agent2: { cx: 915, cy: LANE, w: NW, h: NH, hue: "fulfill", name: "Resolution Agent", kind: "write capable", Icon: Bot },
+  inbound: { cx: 165, cy: LANE, w: NW, h: NH, hue: "neutral", name: "Inbound", kind: "external event", Icon: Inbox },
+  svc: { cx: 420, cy: LANE, w: NW, h: NH, hue: "service", name: "Intake Service", kind: "service client", Icon: Server },
+  agent1: { cx: 675, cy: LANE, w: NW, h: NH, hue: "triage", name: "Triage Agent", kind: "read only", Icon: Bot },
+  agent2: { cx: 930, cy: LANE, w: NW, h: NH, hue: "fulfill", name: "Resolution Agent", kind: "write capable", Icon: Bot },
   jira: { cx: 1185, cy: LANE, w: NW, h: NH, hue: "neutral", name: "Jira", kind: "IT Service Desk", Icon: SquareKanban },
-  okta: { cx: 780, cy: 52, w: 196, h: 54, hue: "okta", name: "Okta", kind: "brokers the hand-off", Icon: ShieldCheck },
-  vault: { cx: 915, cy: 316, w: 176, h: 52, hue: "vault", name: "OPA Vault", kind: "vaulted secret", Icon: KeyRound },
-  denied: { cx: 645, cy: 316, w: 196, h: 52, hue: "bad", name: "write refused", kind: "by Okta policy", Icon: ShieldOff },
+  okta: { cx: 803, cy: 52, w: 196, h: 54, hue: "okta", name: "Okta", kind: "brokers the hand-off", Icon: ShieldCheck },
+  vault: { cx: 930, cy: 316, w: 176, h: 52, hue: "vault", name: "OPA Vault", kind: "vaulted secret", Icon: KeyRound },
+  denied: { cx: 675, cy: 316, w: 196, h: 52, hue: "bad", name: "write refused", kind: "by Okta policy", Icon: ShieldOff },
 };
 
 const H = linkHorizontal();
@@ -241,6 +241,22 @@ function Grad({ id, from, to, x1, x2 }: { id: string; from: string; to: string; 
   );
 }
 
+/** A scope label lifted ABOVE the lane, with a short dashed arrow pointing down to
+ *  the hop it governs. Keeps the scope name out of the tight gap between two cards,
+ *  so the boxes can breathe and grow. */
+function ScopeTag({ x, label, color }: { x: number; label: string; color: string }) {
+  return (
+    <g className="pointer-events-none">
+      <text x={x} y={116} textAnchor="middle" fontSize={11.5} fontWeight={700} fill={color}
+        style={{ fontFamily: "var(--font-mono)" }}>{label}</text>
+      <line x1={x} y1={124} x2={x} y2={LANE - 10} stroke={color} strokeOpacity={0.65}
+        strokeWidth={1.3} strokeDasharray="2 3" />
+      <path d={`M ${x - 4} ${LANE - 11} L ${x + 4} ${LANE - 11} L ${x} ${LANE - 3} Z`}
+        fill={color} fillOpacity={0.85} />
+    </g>
+  );
+}
+
 export default function AgentFlowGraph({ events }: { events: ActivityEvent[] }) {
   const state = useMemo(() => deriveAgentFlowState(events), [events]);
   const reduced = useReducedMotion() ?? false;
@@ -299,18 +315,15 @@ export default function AgentFlowGraph({ events }: { events: ActivityEvent[] }) 
         <OktaConnector d={OKTA_CONN} to={OKTA_MID}
           active={delegate === "running" || delegate === "ok"} flowing={delegate === "running"} reduced={reduced} P={P} />
 
-        {/* scope labels: the CRUD story, readable without hovering anything. The
-            read token is minted by the Intake Service for Agent 1. */}
-        <text x={(N.svc.cx + N.agent1.cx) / 2} y={LANE - 16} textAnchor="middle" fontSize={11}
-          fontWeight={600} fill={state.edges.svcToAgent1.scope ? P.resolve : P.dim}
-          style={{ fontFamily: "var(--font-mono)" }}>
-          {state.edges.svcToAgent1.scope ?? "ticket.read"}
-        </text>
-        <text x={(N.agent2.cx + N.jira.cx) / 2} y={LANE - 16} textAnchor="middle" fontSize={11}
-          fontWeight={600} fill={state.edges.agent2ToJira.scope ? P.fulfill : P.dim}
-          style={{ fontFamily: "var(--font-mono)" }}>
-          {state.edges.agent2ToJira.scope ?? "ticket.write"}
-        </text>
+        {/* scope labels, lifted above the lane with an arrow pointing down to the
+            hop they govern, so they never crowd the gap between the boxes. The read
+            token is minted by the Intake Service for Agent 1. */}
+        <ScopeTag x={(N.svc.cx + N.agent1.cx) / 2}
+          label={state.edges.svcToAgent1.scope ?? "ticket.read"}
+          color={state.edges.svcToAgent1.scope ? P.resolve : P.dim} />
+        <ScopeTag x={(N.agent2.cx + N.jira.cx) / 2}
+          label={state.edges.agent2ToJira.scope ?? "ticket.write"}
+          color={state.edges.agent2ToJira.scope ? P.fulfill : P.dim} />
         {violation && (
           <text x={N.agent1.cx + 14} y={(LANE + NH / 2 + N.denied.cy) / 2 + 4} fontSize={10.5}
             fontWeight={600} fill={deniedActive ? P.bad : P.dim}
