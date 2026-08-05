@@ -40,7 +40,7 @@ const NODES: Record<NodeKey, {
   cx: number; cy: number; w: number; h: number; hue: Hue;
   name: string; kind: string; Icon: typeof Bot;
 }> = {
-  intake: { cx: 108, cy: LANE, w: NW, h: NH, hue: "neutral", name: "Intake", kind: "external system", Icon: Inbox },
+  intake: { cx: 108, cy: LANE, w: NW, h: NH, hue: "neutral", name: "Intake", kind: "inbound event", Icon: Inbox },
   agent1: { cx: 392, cy: LANE, w: NW, h: NH, hue: "triage", name: "Agent 1", kind: "read only", Icon: Bot },
   agent2: { cx: 706, cy: LANE, w: NW, h: NH, hue: "fulfill", name: "Agent 2", kind: "write capable", Icon: Bot },
   jira: { cx: 1010, cy: LANE, w: NW, h: NH, hue: "neutral", name: "Jira", kind: "IT Service Desk", Icon: SquareKanban },
@@ -304,11 +304,34 @@ export default function AgentFlowGraph({ events }: { events: ActivityEvent[] }) 
         <Node k="okta" status={delegate} label={labels.okta} hover={hoverNode} setHover={setHoverNode} P={P} />
         {!violation && <Node k="vault" status={state.vaultBadge} label={labels.vault} hover={hoverNode} setHover={setHoverNode} P={P} />}
         {violation && <Node k="denied" status={deniedActive ? "error" : "idle"} label={labels.denied} hover={hoverNode} setHover={setHoverNode} P={P} />}
+        {/* Trigger callout: name WHERE the run starts. The inbound ticket is an
+            event with no identity of its own; authority begins at the first hop,
+            which is the piece customers most often miss. */}
+        <g className="pointer-events-none">
+          <rect x={N.intake.cx - 52} y={92} width={104} height={22} rx={11}
+            fill={hexA(P.warn, 0.14)} stroke={hexA(P.warn, 0.75)} strokeWidth={1} />
+          <text x={N.intake.cx} y={104} textAnchor="middle" fontSize={10.5} fontWeight={700}
+            fill={P.warn} dominantBaseline="middle"
+            style={{ letterSpacing: "0.1em", fontFamily: "var(--font-mono)" }}>▶ TRIGGER</text>
+          <line x1={N.intake.cx} y1={114} x2={N.intake.cx} y2={LANE - NH / 2}
+            stroke={hexA(P.warn, 0.5)} strokeWidth={1.2} strokeDasharray="3 3" />
+        </g>
         <Node k="intake" status={state.nodes.intake} label={labels.intake} hover={hoverNode} setHover={setHoverNode} P={P} />
         <Node k="agent1" status={state.nodes.agent1} label={labels.agent1} hover={hoverNode} setHover={setHoverNode} P={P} />
         <Node k="agent2" status={state.nodes.agent2} label={labels.agent2} hover={hoverNode} setHover={setHoverNode} P={P} />
         <Node k="jira" status={state.nodes.jira} label={labels.jira} hover={hoverNode} setHover={setHoverNode} P={P} />
       </svg>
+
+      {/* The piece customers miss: the trigger is an event, not an identity. */}
+      <div className="mt-2.5 flex items-start gap-2 rounded-lg border border-warn/25 bg-warn/[0.05] px-3 py-2 text-2xs leading-snug text-soft">
+        <span className="mt-px shrink-0 font-mono font-bold tracking-wider text-warn">▶ TRIGGER</span>
+        <span>
+          The inbound ticket is the trigger: an <span className="text-ink">event, not an identity</span>, so it
+          carries no token or scope. Authority begins at the first hop, where the root machine identity (the
+          intake service) mints the <span className="font-mono text-resolve">ticket.read</span> token that Agent 1
+          holds. Everything after that is a signed, attributable delegation, not a shared key.
+        </span>
+      </div>
 
       {state.errorMessage && <div className="mt-2 text-[13px] text-bad">{state.errorMessage}</div>}
     </div>
