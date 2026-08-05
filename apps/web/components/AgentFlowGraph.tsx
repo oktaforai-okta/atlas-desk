@@ -30,7 +30,7 @@ import { useResolvedTheme, vizPalette, withAlpha, type VizPalette } from "@/lib/
 
 // ---- fixed geometry (viewBox 0 0 1200 360) ----
 const LANE = 188;
-const NW = 168;
+const NW = 196;
 const NH = 84;
 type NodeKey = "intake" | "agent1" | "agent2" | "jira" | "okta" | "vault" | "denied";
 type Hue = keyof Pick<VizPalette, "neutral" | "triage" | "fulfill" | "okta" | "vault" | "bad">;
@@ -41,8 +41,8 @@ const NODES: Record<NodeKey, {
   name: string; kind: string; Icon: typeof Bot;
 }> = {
   intake: { cx: 108, cy: LANE, w: NW, h: NH, hue: "neutral", name: "Intake", kind: "inbound event", Icon: Inbox },
-  agent1: { cx: 392, cy: LANE, w: NW, h: NH, hue: "triage", name: "Agent 1", kind: "read only", Icon: Bot },
-  agent2: { cx: 706, cy: LANE, w: NW, h: NH, hue: "fulfill", name: "Agent 2", kind: "write capable", Icon: Bot },
+  agent1: { cx: 392, cy: LANE, w: NW, h: NH, hue: "triage", name: "Triage Agent", kind: "read only", Icon: Bot },
+  agent2: { cx: 706, cy: LANE, w: NW, h: NH, hue: "fulfill", name: "Resolution Agent", kind: "write capable", Icon: Bot },
   jira: { cx: 1010, cy: LANE, w: NW, h: NH, hue: "neutral", name: "Jira", kind: "IT Service Desk", Icon: SquareKanban },
   okta: { cx: 549, cy: 52, w: 196, h: 54, hue: "okta", name: "Okta", kind: "brokers the hand-off", Icon: ShieldCheck },
   vault: { cx: 880, cy: 316, w: 168, h: 52, hue: "vault", name: "OPA Vault", kind: "vaulted secret", Icon: KeyRound },
@@ -65,6 +65,14 @@ const OKTA_MID: [number, number] = [(N.agent1.cx + NW / 2 + N.agent2.cx - NW / 2
 const OKTA_CONN = linkPath(V, [N.okta.cx, N.okta.cy + N.okta.h / 2], OKTA_MID);
 
 const hexA = withAlpha;
+
+/** Keep a label inside its card: compress it only if it would otherwise spill
+ *  past the box (this is what stops "→ Access Mgmt · 4 similar" overflowing). */
+function fitText(text: string, fontSize: number, avail: number): { textLength?: number; lengthAdjust?: "spacingAndGlyphs" } {
+  return text.length * fontSize * 0.56 > avail
+    ? { textLength: Math.max(1, avail), lengthAdjust: "spacingAndGlyphs" }
+    : {};
+}
 
 function statusColor(base: string, s: FlowStatus, P: VizPalette): string {
   return s === "idle" ? P.idle : s === "running" ? P.warn : s === "error" ? P.bad : base;
@@ -192,25 +200,25 @@ function Node({ k, status, label, hover, setHover, P }: {
       {compact ? (
         <>
           <g transform={`translate(${tlx + 16},${n.cy - 12})`}><n.Icon width={24} height={24} color={iconC} strokeWidth={2} /></g>
-          <text x={tlx + 48} y={n.cy - 3} fontSize={15} fontWeight={600} fill={P.title}>{n.name}</text>
+          <text x={tlx + 48} y={n.cy - 3} fontSize={15} fontWeight={600} fill={P.title} {...fitText(n.name, 15, n.w - 60)}>{n.name}</text>
           {label ? (
             <g transform={`translate(${tlx + 48},${n.cy + 14})`}>
               <circle cx={3} cy={-3} r={3.5} fill={secColor} className={status === "running" ? "live-dot" : undefined} />
-              <text x={13} y={0} fontSize={11.5} fontWeight={500} fill={secColor}>{label}</text>
+              <text x={13} y={0} fontSize={11.5} fontWeight={500} fill={secColor} {...fitText(label, 11.5, n.w - 73)}>{label}</text>
             </g>
           ) : (
-            <text x={tlx + 48} y={n.cy + 14} fontSize={11.5} fill={P.sub}>{n.kind}</text>
+            <text x={tlx + 48} y={n.cy + 14} fontSize={11.5} fill={P.sub} {...fitText(n.kind, 11.5, n.w - 60)}>{n.kind}</text>
           )}
         </>
       ) : (
         <>
           <g transform={`translate(${tlx + 16},${tly + 16})`}><n.Icon width={26} height={26} color={iconC} strokeWidth={2} /></g>
-          <text x={tlx + 52} y={tly + 31} fontSize={16.5} fontWeight={600} fill={P.title}>{n.name}</text>
-          <text x={tlx + 52} y={tly + 50} fontSize={12} fill={P.sub}>{n.kind}</text>
+          <text x={tlx + 52} y={tly + 31} fontSize={16.5} fontWeight={600} fill={P.title} {...fitText(n.name, 16.5, n.w - 64)}>{n.name}</text>
+          <text x={tlx + 52} y={tly + 50} fontSize={12} fill={P.sub} {...fitText(n.kind, 12, n.w - 64)}>{n.kind}</text>
           {label && (
             <g transform={`translate(${tlx + 16},${tly + 70})`}>
               <circle cx={3.5} cy={-3.5} r={3.5} fill={secColor} className={status === "running" ? "live-dot" : undefined} />
-              <text x={14} y={0} fontSize={12} fontWeight={500} fill={secColor}>{label}</text>
+              <text x={14} y={0} fontSize={12} fontWeight={500} fill={secColor} {...fitText(label, 12, n.w - 42)}>{label}</text>
             </g>
           )}
         </>
@@ -330,6 +338,20 @@ export default function AgentFlowGraph({ events }: { events: ActivityEvent[] }) 
           carries no token or scope. Authority begins at the first hop, where the root machine identity (the
           intake service) mints the <span className="font-mono text-resolve">ticket.read</span> token that Agent 1
           holds. Everything after that is a signed, attributable delegation, not a shared key.
+        </span>
+      </div>
+
+      {/* Say what the two agents are, so no one has to wonder "which agent is which,
+          and is there a third?" There are exactly two that act, split by capability. */}
+      <div className="mt-2 flex items-start gap-2 rounded-lg border border-line bg-panel px-3 py-2 text-2xs leading-snug text-soft">
+        <span className="mt-px shrink-0 font-mono font-bold tracking-wider text-ink">2 AGENTS</span>
+        <span>
+          Each is its own Okta workload principal, split by capability.{" "}
+          <span className="font-medium text-resolve">Agent 1, the Triage Agent</span>, can only read
+          (<span className="font-mono text-resolve">ticket.read</span>); it hands off to{" "}
+          <span className="font-medium text-fulfill">Agent 2, the Resolution Agent</span>, which can write
+          (<span className="font-mono text-fulfill">ticket.write</span>). Okta brokers the hand-off and refuses
+          any scope an agent was not granted.
         </span>
       </div>
 
