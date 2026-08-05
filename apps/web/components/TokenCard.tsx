@@ -1,14 +1,34 @@
 "use client";
 
-// One credential, one card. Encoded string, Copy, jwt.io. No decoded JSON.
+// One credential, one card: encoded string, Copy, jwt.io, and a decoded view
+// that is collapsed by default.
 //
-// A decoded view rendered by this app proves nothing, because this app drew it.
-// The encoded string handed to a tool we do not control is the proof. So the
-// only affordances here are the ones that get the token out of the page.
+// The ordering is deliberate. A decoded view rendered by this app proves nothing,
+// because this app drew it; the encoded string handed to a tool we do not control
+// is the proof. So the encoded box and the jwt.io link stay primary, and the
+// parsed claims are a convenience tucked behind a disclosure rather than the
+// headline.
+//
+// The jwt.io link pre-loads the token via the URL fragment, which browsers do not
+// transmit to the server. jwt.io therefore parses it locally and never receives a
+// request containing the credential.
 
 import { useState } from "react";
-import { Copy, Check, ExternalLink, ShieldOff } from "lucide-react";
-import type { ChainStep } from "@/lib/chain";
+import { Copy, Check, ExternalLink, ShieldOff, ChevronRight } from "lucide-react";
+import { decodeToken, formatClaims, jwtIoUrl, type ChainStep } from "@/lib/chain";
+
+function DecodedBlock({ label, json }: { label: string; json: string }) {
+  return (
+    <div>
+      <div className="mb-1 text-2xs font-semibold uppercase tracking-wider text-mute">
+        {label}
+      </div>
+      <pre className="overflow-x-auto rounded-lg border border-line bg-[var(--code-bg)] p-3 font-mono text-[11px] leading-relaxed text-soft">
+        {json}
+      </pre>
+    </div>
+  );
+}
 
 const KIND_STYLE: Record<ChainStep["kind"], string> = {
   "Access Token": "border-accent/40 text-accent",
@@ -23,6 +43,8 @@ function shorten(id?: string): string {
 
 export default function TokenCard({ step }: { step: ChainStep }) {
   const [copied, setCopied] = useState<"token" | "error" | null>(null);
+  const [open, setOpen] = useState(false);
+  const decoded = step.token ? decodeToken(step.token) : null;
 
   async function copy(text: string, what: "token" | "error") {
     try {
@@ -82,7 +104,7 @@ export default function TokenCard({ step }: { step: ChainStep }) {
 
       {/* denial: Okta's own words, copyable */}
       {denied && step.denial && (
-        <div className="mt-3 rounded-lg border border-bad/30 bg-[#0B0E13] p-3">
+        <div className="mt-3 rounded-lg border border-bad/30 bg-[var(--code-bg)] p-3">
           <div className="mb-1.5 flex items-center justify-between gap-2">
             <span className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-bad">
               <ShieldOff className="h-3.5 w-3.5" /> Refused by Okta
@@ -137,18 +159,47 @@ export default function TokenCard({ step }: { step: ChainStep }) {
                 {copied === "token" ? "Copied" : "Copy"}
               </button>
               <a
-                href="https://jwt.io"
+                href={jwtIoUrl(step.token)}
                 target="_blank"
                 rel="noopener noreferrer"
+                title="Opens jwt.io with this token already loaded. The token travels in the URL fragment, which is never sent to jwt.io's server."
                 className="inline-flex items-center gap-1 rounded-md border border-line px-2 py-1 text-2xs text-soft transition-colors hover:border-accent/60 hover:text-accent"
               >
-                <ExternalLink className="h-3 w-3" /> jwt.io
+                <ExternalLink className="h-3 w-3" /> Open in jwt.io
               </a>
             </div>
           </div>
-          <div className="rounded-lg border border-line bg-[#0B0E13] p-3 font-mono text-[11px] leading-relaxed text-resolve/90 [overflow-wrap:anywhere]">
+          <div className="rounded-lg border border-line bg-[var(--code-bg)] p-3 font-mono text-[11px] leading-relaxed text-resolve/90 [overflow-wrap:anywhere]">
             {step.token}
           </div>
+
+          {decoded && (
+            <div className="mt-2">
+              <button
+                type="button"
+                onClick={() => setOpen((v) => !v)}
+                aria-expanded={open}
+                className="inline-flex items-center gap-1 text-2xs text-mute transition-colors hover:text-soft"
+              >
+                <ChevronRight
+                  className={`h-3 w-3 transition-transform ${open ? "rotate-90" : ""}`}
+                />
+                {open ? "Hide decoded" : "Show decoded"}
+              </button>
+              {open && (
+                <div className="mt-2 space-y-2">
+                  <DecodedBlock label="Header" json={JSON.stringify(decoded.header, null, 2)} />
+                  <DecodedBlock label="Payload" json={formatClaims(decoded.payload)} />
+                  <p className="text-2xs leading-relaxed text-mute/80">
+                    Decoded in your browser for convenience. It is not verified here, and
+                    nothing about it should be taken on this page&apos;s word. Use the
+                    jwt.io link above to check the signature against Okta&apos;s published
+                    keys yourself.
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
     </div>

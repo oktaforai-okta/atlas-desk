@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Inbox, KeyRound, Network } from "lucide-react";
 import AtlasMark from "@/components/AtlasMark";
+import ThemeToggle from "@/components/ThemeToggle";
 
 const NAV = [
   { href: "/", label: "Service Desk", icon: Inbox },
@@ -42,6 +43,9 @@ export default function Sidebar() {
         })}
       </nav>
 
+      <div className="border-t border-line px-3 py-3">
+        <ThemeToggle />
+      </div>
     </aside>
   );
 }

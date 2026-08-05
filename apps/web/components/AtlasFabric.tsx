@@ -19,22 +19,30 @@ import {
   zoom as d3zoom, zoomIdentity, select, pointer,
   type Simulation, type ZoomTransform, type ZoomBehavior,
 } from "d3";
+import { useResolvedTheme, vizPalette } from "@/lib/theme";
 
 type NType = "external" | "service" | "agent" | "resource";
 type IconName = "inbox" | "server" | "bot" | "lock" | "kanban";
 interface FNode {
-  id: string; label: string; icon: IconName; type: NType; color: string;
+  id: string; label: string; icon: IconName; type: NType; hue: Hue;
   role: string; idKind?: string; idVal?: string; // role shown in-card; real id (WLP/APP) revealed OUTSIDE on hover/replay
   realName?: string; // for AI agents: the real name (Triage/Resolution/Fulfillment), revealed alongside the id
   tx: number; ty: number; x: number; y: number; fx?: number | null; fy?: number | null;
 }
 interface FLink { source: string | FNode; target: string | FNode; brokered?: boolean; kind?: "branch" }
 
-const C: Record<string, string> = {
-  external: "#8B96A8", service: "#B79CFF", okta: "#93B4FF",
-  triage: "#7AA2FF", resolve: "#4ED492", fulfill: "#E0A34E", resource: "#64BBC8",
-};
-const colorKey = (hex: string) => Object.keys(C).find((k) => C[k] === hex) ?? "external";
+type Hue = "external" | "service" | "okta" | "triage" | "resolve" | "fulfill" | "resource";
+const HUES: Hue[] = ["external", "service", "okta", "triage", "resolve", "fulfill", "resource"];
+
+/** Hues resolve per theme. Nodes store the hue NAME rather than a hex so the d3
+ *  simulation is never re-initialised on a theme change, which would otherwise
+ *  reset the layout the user had just dragged into place. */
+function hues(P: ReturnType<typeof vizPalette>): Record<Hue, string> {
+  return {
+    external: P.neutral, service: P.service, okta: P.okta,
+    triage: P.triage, resolve: P.resolve, fulfill: P.fulfill, resource: P.vault,
+  };
+}
 
 // A left-to-right delegation pipeline; the vault hangs directly BELOW Fulfillment
 // (the only agent trusted to pull the prod credential) as a governance side-branch.
@@ -48,12 +56,12 @@ const colorKey = (hex: string) => Object.keys(C).find((k) => C[k] === hex) ?? "e
 // Agent 1 holds ticket.read; Agent 2 is the only client authorized on the write
 // authorization server, so it is the only one that can hold ticket.write.
 const RAW_NODES: Omit<FNode, "x" | "y">[] = [
-  { id: "inbound", label: "Inbound Tickets", role: "external system", icon: "inbox", type: "external", color: C.external, tx: 150, ty: 180 },
-  { id: "svc", label: "Intake Service", role: "service client", idKind: "APP ID", idVal: "0oaEXAMPLEIntakeSvc1", icon: "server", type: "service", color: C.service, tx: 410, ty: 180 },
-  { id: "triage", label: "Agent 1", role: "read only", realName: "reader", idVal: "wlpEXAMPLEAgentOne01", icon: "bot", type: "agent", color: C.triage, tx: 700, ty: 180 },
-  { id: "fulfill", label: "Agent 2", role: "write capable", realName: "writer", idVal: "wlpEXAMPLEAgentTwo01", icon: "bot", type: "agent", color: C.fulfill, tx: 1010, ty: 180 },
-  { id: "jira", label: "Jira · ITSD", role: "IT Service Desk", icon: "kanban", type: "external", color: C.external, tx: 1320, ty: 180 },
-  { id: "vault", label: "OPA Vault", role: "vaulted secret", icon: "lock", type: "resource", color: C.resource, tx: 1010, ty: 445 },
+  { id: "inbound", label: "Inbound Tickets", role: "external system", icon: "inbox", type: "external", hue: "external", tx: 150, ty: 180 },
+  { id: "svc", label: "Intake Service", role: "service client", idKind: "APP ID", idVal: "0oaEXAMPLEIntakeSvc1", icon: "server", type: "service", hue: "service", tx: 410, ty: 180 },
+  { id: "triage", label: "Agent 1", role: "read only", realName: "reader", idVal: "wlpEXAMPLEAgentOne01", icon: "bot", type: "agent", hue: "triage", tx: 700, ty: 180 },
+  { id: "fulfill", label: "Agent 2", role: "write capable", realName: "writer", idVal: "wlpEXAMPLEAgentTwo01", icon: "bot", type: "agent", hue: "fulfill", tx: 1010, ty: 180 },
+  { id: "jira", label: "Jira · ITSD", role: "IT Service Desk", icon: "kanban", type: "external", hue: "external", tx: 1320, ty: 180 },
+  { id: "vault", label: "OPA Vault", role: "vaulted secret", icon: "lock", type: "resource", hue: "resource", tx: 1010, ty: 445 },
 ];
 const RAW_LINKS: FLink[] = [
   { source: "inbound", target: "svc" },
@@ -99,6 +107,8 @@ export default function AtlasFabric() {
   const [transform, setTransform] = useState<ZoomTransform>(zoomIdentity);
   const [hovered, setHovered] = useState<string | null>(null);
   const [token, setToken] = useState<{ x: number; y: number } | null>(null);
+  const P = vizPalette(useResolvedTheme());
+  const H = hues(P);
 
   useEffect(() => {
     const nodes = nodesRef.current, links = linksRef.current;
@@ -209,12 +219,12 @@ export default function AtlasFabric() {
       <svg ref={svgRef} viewBox="0 0 1600 540" className="h-[540px] w-full cursor-grab active:cursor-grabbing">
         <defs>
           <linearGradient id={`${uid}-card`} x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0" stopColor="#171C25" />
-            <stop offset="1" stopColor="#0F131A" />
+            <stop offset="0" stopColor={P.cardFrom} />
+            <stop offset="1" stopColor={P.cardTo} />
           </linearGradient>
-          {Object.entries(C).map(([k, v]) => (
+          {HUES.map((k) => (
             <marker key={k} id={`${uid}-arw-${k}`} viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-              <path d="M0,0 L10,5 L0,10 z" fill={v} />
+              <path d="M0,0 L10,5 L0,10 z" fill={H[k]} />
             </marker>
           ))}
         </defs>
@@ -235,9 +245,9 @@ export default function AtlasFabric() {
               const d = `M ${x1} ${y1} C ${x1} ${cy}, ${x2} ${cy}, ${x2} ${y2}`;
               return (
                 <g key={i} style={{ opacity: active ? 1 : 0.16 }}>
-                  <path d={d} fill="none" stroke={b.color} strokeOpacity={0.7} strokeWidth={2}
+                  <path d={d} fill="none" stroke={H[b.hue]} strokeOpacity={0.7} strokeWidth={2}
                     strokeDasharray="5 5" strokeLinecap="round" />
-                  <text x={(x1 + x2) / 2 + 12} y={cy} fontSize={10} fill={b.color} dominantBaseline="middle"
+                  <text x={(x1 + x2) / 2 + 12} y={cy} fontSize={10} fill={H[b.hue]} dominantBaseline="middle"
                     style={{ letterSpacing: "0.02em" }}>credential</text>
                 </g>
               );
@@ -249,8 +259,8 @@ export default function AtlasFabric() {
             const off = Math.min(edgeDist + 7, len * 0.45); // clamp so short edges never cross
             return (
               <line key={i} x1={a.x + ux * off} y1={a.y + uy * off} x2={b.x - ux * off} y2={b.y - uy * off}
-                stroke={b.color} strokeOpacity={active ? 0.85 : 0.12}
-                strokeWidth={2.4} markerEnd={`url(#${uid}-arw-${colorKey(b.color)})`} />
+                stroke={H[b.hue]} strokeOpacity={active ? 0.85 : 0.12}
+                strokeWidth={2.4} markerEnd={`url(#${uid}-arw-${b.hue})`} />
             );
           })}
           {/* id-jag broker badges, sit on the agent→agent hops, where Okta mints the token */}
@@ -261,15 +271,15 @@ export default function AtlasFabric() {
             const active = !neighbors || (neighbors.has(a.id) && neighbors.has(b.id));
             return (
               <g key={`bk-${i}`} style={{ opacity: active ? 1 : 0.12 }} className="pointer-events-none">
-                <circle cx={mx} cy={my} r={16} fill="#0F131A" stroke={C.okta} strokeWidth={1.4}
-                  style={{ filter: `drop-shadow(0 0 6px ${C.okta}66)` }} />
-                <g transform={`translate(${mx},${my}) scale(0.64)`} stroke={C.okta} strokeWidth={2} fill="none" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx={mx} cy={my} r={16} fill={P.canvas} stroke={P.okta} strokeWidth={1.4}
+                  style={{ filter: `drop-shadow(0 0 6px ${P.okta}66)` }} />
+                <g transform={`translate(${mx},${my}) scale(0.64)`} stroke={P.okta} strokeWidth={2} fill="none" strokeLinecap="round" strokeLinejoin="round">
                   <g transform="translate(-12,-12)">
                     <path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z" />
                     <path d="m9 12 2 2 4-4" />
                   </g>
                 </g>
-                <text textAnchor="middle" y={my + 31} x={mx} fontSize={10.5} fontWeight={700} fill={C.okta} style={{ letterSpacing: "0.04em" }}>id-jag</text>
+                <text textAnchor="middle" y={my + 31} x={mx} fontSize={10.5} fontWeight={700} fill={P.okta} style={{ letterSpacing: "0.04em" }}>id-jag</text>
               </g>
             );
           })}
@@ -284,20 +294,20 @@ export default function AtlasFabric() {
                 transform={`translate(${n.x},${n.y}) scale(${hl ? 1.04 : 1})`}>
                 {/* ambient color glow */}
                 <rect x={-NW / 2 - 3} y={-NH / 2 - 3} width={NW + 6} height={NH + 6} rx={16}
-                  fill={n.color} opacity={hl ? 0.18 : 0.06} />
+                  fill={H[n.hue]} opacity={hl ? 0.18 : 0.06} />
                 {/* card body */}
                 <rect x={-NW / 2} y={-NH / 2} width={NW} height={NH} rx={14}
-                  fill={`url(#${uid}-card)`} stroke={n.color} strokeOpacity={hl ? 1 : 0.55} strokeWidth={hl ? 2 : 1.3}
-                  style={{ filter: `drop-shadow(0 8px 18px rgba(0,0,0,0.5))${hl ? ` drop-shadow(0 0 12px ${n.color}88)` : ""}` }} />
+                  fill={`url(#${uid}-card)`} stroke={H[n.hue]} strokeOpacity={hl ? 1 : 0.55} strokeWidth={hl ? 2 : 1.3}
+                  style={{ filter: `drop-shadow(0 6px 14px rgba(0,0,0,0.28))${hl ? ` drop-shadow(0 0 12px ${H[n.hue]}88)` : ""}` }} />
                 {/* icon chip (vertically centered) */}
-                <rect x={chipCX - 18} y={-18} width={36} height={36} rx={9} fill={n.color} opacity={0.14} />
-                <rect x={chipCX - 18} y={-18} width={36} height={36} rx={9} fill="none" stroke={n.color} strokeOpacity={0.42} />
-                <g transform={`translate(${chipCX},0) scale(0.75)`} stroke={n.color} strokeWidth={2} fill="none" strokeLinecap="round" strokeLinejoin="round">
+                <rect x={chipCX - 18} y={-18} width={36} height={36} rx={9} fill={H[n.hue]} opacity={0.14} />
+                <rect x={chipCX - 18} y={-18} width={36} height={36} rx={9} fill="none" stroke={H[n.hue]} strokeOpacity={0.42} />
+                <g transform={`translate(${chipCX},0) scale(0.75)`} stroke={H[n.hue]} strokeWidth={2} fill="none" strokeLinecap="round" strokeLinejoin="round">
                   <g transform="translate(-12,-12)">{glyph(n.icon)}</g>
                 </g>
                 {/* clean card: name + role only; the real Okta id lives outside the box now */}
-                <text x={chipCX + 30} y={-3} fontSize={15} fontWeight={700} fill="#F2F5FA">{n.label}</text>
-                <text x={chipCX + 30} y={16} fontSize={11} fill={hl ? n.color : "#8B96A8"}>{n.role}</text>
+                <text x={chipCX + 30} y={-3} fontSize={15} fontWeight={700} fill={P.title}>{n.label}</text>
+                <text x={chipCX + 30} y={16} fontSize={11} fill={hl ? H[n.hue] : P.sub}>{n.role}</text>
               </g>
             );
           })}
@@ -314,21 +324,21 @@ export default function AtlasFabric() {
             return (
               <g key={`id-${n.id}`} className="pointer-events-none"
                 style={{ opacity: active ? 1 : 0, transition: "opacity 0.45s ease" }}>
-                <rect x={left} y={top} width={pillW} height={24} rx={12} fill="#0B0E13"
-                  stroke={n.color} strokeOpacity={0.7}
-                  style={{ filter: active ? `drop-shadow(0 0 8px ${n.color}66)` : undefined }} />
+                <rect x={left} y={top} width={pillW} height={24} rx={12} fill={P.canvas}
+                  stroke={H[n.hue]} strokeOpacity={0.7}
+                  style={{ filter: active ? `drop-shadow(0 0 8px ${H[n.hue]}66)` : undefined }} />
                 <text x={left + 14} y={top + 13} fontSize={n.realName ? 10.5 : 8.5} fontWeight={n.realName ? 700 : 600}
-                  fill={n.realName ? "#E7ECF5" : "#6B7688"}
+                  fill={n.realName ? P.title : P.dim}
                   dominantBaseline="middle" style={{ letterSpacing: n.realName ? "0.01em" : "0.08em" }}>{labelText}</text>
-                <text x={idX} y={top + 13} fontSize={10} fill={n.color}
+                <text x={idX} y={top + 13} fontSize={10} fill={H[n.hue]}
                   dominantBaseline="middle" style={{ fontFamily: "var(--font-mono)", letterSpacing: "-0.02em" }}>{n.idVal}</text>
               </g>
             );
           })}
           {token && (
             <>
-              <circle cx={token.x} cy={token.y} r={13} fill="rgba(245,248,252,0.14)" />
-              <circle cx={token.x} cy={token.y} r={6} fill="#F8FAFF" style={{ filter: "drop-shadow(0 0 8px rgba(180,205,255,0.95))" }} />
+              <circle cx={token.x} cy={token.y} r={13} fill={P.particleHalo} />
+              <circle cx={token.x} cy={token.y} r={6} fill={P.particle} />
             </>
           )}
         </g>
@@ -337,11 +347,11 @@ export default function AtlasFabric() {
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 border-t border-line px-4 py-2.5 text-2xs">
         {([["external", "External system"], ["service", "Service client"], ["agent", "AI agent (WLP)"], ["resource", "Resource"]] as const).map(([t, lbl]) => (
           <span key={t} className="inline-flex items-center gap-1.5 text-soft">
-            <span className="h-2.5 w-2.5 rounded-full" style={{ background: t === "agent" ? C.triage : C[t] }} /> {lbl}
+            <span className="h-2.5 w-2.5 rounded-full" style={{ background: t === "agent" ? H.triage : H[t as Hue] }} /> {lbl}
           </span>
         ))}
         <span className="ml-auto inline-flex items-center gap-1.5 text-mute">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={C.okta} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={P.okta} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z" />
             <path d="m9 12 2 2 4-4" />
           </svg>

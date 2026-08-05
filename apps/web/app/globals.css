@@ -2,18 +2,161 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Theming
+   -------
+   Every colour is a CSS variable holding an "R G B" triple, so Tailwind can
+   compose it as rgb(var(--x) / <alpha-value>) and the opacity modifiers this
+   codebase leans on heavily (bg-ok/10, border-bad/40, bg-accent/[0.06]) keep
+   working unchanged.
+
+   Dark is the default and the design's native mode. Light follows the system
+   preference, and an explicit choice can override the system via a class on
+   <html> (set by the toggle in the sidebar).
+
+   The two SVG visualisation surfaces (the agent flow graph and the identity
+   fabric) deliberately stay on a dark canvas in both themes. They are dense,
+   glow-dependent diagrams whose ~250 lines of hardcoded stroke and fill values
+   are tuned for a dark ground; re-tuning them for light would change how the
+   status colours read, which is load-bearing information rather than styling.
+   A dark visualisation panel inside a light page is a normal pattern, the same
+   way a code block is. Those surfaces use the --viz-* variables, which do not
+   change between themes. */
+
 :root {
   --font-sans: "Hanken Grotesk", system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, monospace;
+
+  /* ---- dark (default) ---- */
+  --c-bg: 11 14 19;
+  --c-panel: 16 20 28;
+  --c-surface: 20 26 35;
+  --c-raised: 26 33 44;
+  --c-line: 42 50 63;
+  --c-line2: 58 68 86;
+  --c-mute: 139 150 168;
+  --c-soft: 170 180 195;
+  --c-body: 199 208 221;
+  --c-ink: 228 233 241;
+  --c-bright: 245 248 252;
+  --c-accent: 122 162 255;
+  --c-ok: 78 212 146;
+  --c-warn: 242 180 80;
+  --c-bad: 255 97 104;
+  --c-triage: 122 162 255;
+  --c-resolve: 78 212 146;
+  --c-fulfill: 224 163 78;
+
+  /* page backdrop + material surfaces */
+  --page-bloom-a: rgba(122, 162, 255, 0.07);
+  --page-bloom-b: rgba(78, 212, 146, 0.05);
+  --page-base: #0a0d12;
+  --card-border: #1e242e;
+  --card-from: #141a22;
+  --card-to: #10151c;
+  --quiet-border: #191f28;
+  --quiet-from: #10151c;
+  --quiet-to: #0d1117;
+  --glass-border: #232b37;
+  --glass-from: rgba(26, 33, 44, 0.7);
+  --glass-to: rgba(16, 21, 28, 0.7);
+  --mesh-dot: rgba(122, 162, 255, 0.06);
+  --scroll-thumb: #1e242e;
+  --scroll-thumb-hover: #2a323f;
+  --code-bg: #0b0e13;
+
+  /* visualisation canvas: intentionally identical in both themes */
+  --viz-bg: #0b0e13;
+  --viz-border: #1e242e;
 }
 
-html, body {
-  /* layered depth: a soft identity-blue bloom up top, deep near-black base */
+/* Light, applied when the system asks for it and no explicit choice was made. */
+@media (prefers-color-scheme: light) {
+  :root:not(.dark):not(.light) {
+    --c-bg: 250 251 253;
+    --c-panel: 255 255 255;
+    --c-surface: 244 246 250;
+    --c-raised: 237 241 247;
+    --c-line: 219 225 234;
+    --c-line2: 197 205 218;
+    --c-mute: 106 116 133;      /* 4.6:1 on white */
+    --c-soft: 82 92 108;
+    --c-body: 55 65 81;
+    --c-ink: 32 41 55;
+    --c-bright: 15 23 36;
+    --c-accent: 42 92 214;      /* darkened: the dark-mode blue fails on white */
+    --c-ok: 22 138 90;
+    --c-warn: 168 106 12;
+    --c-bad: 199 45 54;
+    --c-triage: 42 92 214;
+    --c-resolve: 22 138 90;
+    --c-fulfill: 166 100 16;
+
+    --page-bloom-a: rgba(42, 92, 214, 0.05);
+    --page-bloom-b: rgba(22, 138, 90, 0.04);
+    --page-base: #f7f9fc;
+    --card-border: #e2e7ef;
+    --card-from: #ffffff;
+    --card-to: #fbfcfe;
+    --quiet-border: #e6eaf1;
+    --quiet-from: #fbfcfe;
+    --quiet-to: #f5f7fa;
+    --glass-border: #e2e7ef;
+    --glass-from: rgba(255, 255, 255, 0.75);
+    --glass-to: rgba(247, 249, 252, 0.75);
+    --mesh-dot: rgba(42, 92, 214, 0.07);
+    --scroll-thumb: #d5dbe5;
+    --scroll-thumb-hover: #bcc5d3;
+    --code-bg: #f3f5f9;
+  }
+}
+
+/* Explicit choice wins over the system preference. */
+:root.light {
+  --c-bg: 250 251 253;
+  --c-panel: 255 255 255;
+  --c-surface: 244 246 250;
+  --c-raised: 237 241 247;
+  --c-line: 219 225 234;
+  --c-line2: 197 205 218;
+  --c-mute: 106 116 133;
+  --c-soft: 82 92 108;
+  --c-body: 55 65 81;
+  --c-ink: 32 41 55;
+  --c-bright: 15 23 36;
+  --c-accent: 42 92 214;
+  --c-ok: 22 138 90;
+  --c-warn: 168 106 12;
+  --c-bad: 199 45 54;
+  --c-triage: 42 92 214;
+  --c-resolve: 22 138 90;
+  --c-fulfill: 166 100 16;
+
+  --page-bloom-a: rgba(42, 92, 214, 0.05);
+  --page-bloom-b: rgba(22, 138, 90, 0.04);
+  --page-base: #f7f9fc;
+  --card-border: #e2e7ef;
+  --card-from: #ffffff;
+  --card-to: #fbfcfe;
+  --quiet-border: #e6eaf1;
+  --quiet-from: #fbfcfe;
+  --quiet-to: #f5f7fa;
+  --glass-border: #e2e7ef;
+  --glass-from: rgba(255, 255, 255, 0.75);
+  --glass-to: rgba(247, 249, 252, 0.75);
+  --mesh-dot: rgba(42, 92, 214, 0.07);
+  --scroll-thumb: #d5dbe5;
+  --scroll-thumb-hover: #bcc5d3;
+  --code-bg: #f3f5f9;
+}
+
+html,
+body {
+  /* layered depth: a soft identity bloom up top, quiet base beneath */
   background:
-    radial-gradient(1200px 620px at 78% -12%, rgba(122,162,255,0.07), transparent 60%),
-    radial-gradient(900px 500px at 8% 108%, rgba(78,212,146,0.05), transparent 55%),
-    #0A0D12;
-  color: #A8B2C0;
+    radial-gradient(1200px 620px at 78% -12%, var(--page-bloom-a), transparent 60%),
+    radial-gradient(900px 500px at 8% 108%, var(--page-bloom-b), transparent 55%),
+    var(--page-base);
+  color: rgb(var(--c-soft));
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
@@ -21,13 +164,13 @@ html, body {
 
 /* Product surfaces with subtle material depth */
 .card {
-  border: 1px solid #1E242E;
-  background: linear-gradient(180deg, #141A22 0%, #10151C 100%);
+  border: 1px solid var(--card-border);
+  background: linear-gradient(180deg, var(--card-from) 0%, var(--card-to) 100%);
   border-radius: 14px;
 }
 .card-quiet {
-  border: 1px solid #191F28;
-  background: linear-gradient(180deg, #10151C 0%, #0D1117 100%);
+  border: 1px solid var(--quiet-border);
+  background: linear-gradient(180deg, var(--quiet-from) 0%, var(--quiet-to) 100%);
   border-radius: 12px;
 }
 
@@ -35,64 +178,121 @@ html, body {
 
 /* identity spectrum: service violet → triage blue → resolution green */
 .spectrum {
-  background: linear-gradient(90deg, #B79CFF, #7AA2FF 45%, #4ED492);
+  background: linear-gradient(90deg, #b79cff, #7aa2ff 45%, #4ed492);
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
 }
+:root.light .spectrum,
+:root:not(.dark) .spectrum {
+  /* the dark-mode gradient is too pale to read as text on white */
+  background: linear-gradient(90deg, #7c5cf0, #2a5cd6 45%, #168a5a);
+  -webkit-background-clip: text;
+  background-clip: text;
+}
 
 /* hero backdrop: faint dot-grid, evokes an ops-center canvas */
 .hero-mesh {
-  background-image: radial-gradient(rgba(122,162,255,0.06) 1px, transparent 1.2px);
+  background-image: radial-gradient(var(--mesh-dot) 1px, transparent 1.2px);
   background-size: 24px 24px;
   background-position: -1px -1px;
 }
 
 /* raised glass panel for proof/detail blocks */
 .glass {
-  border: 1px solid #232B37;
-  background: linear-gradient(180deg, rgba(26,33,44,0.7), rgba(16,21,28,0.7));
+  border: 1px solid var(--glass-border);
+  background: linear-gradient(180deg, var(--glass-from), var(--glass-to));
   backdrop-filter: blur(6px);
   border-radius: 12px;
 }
 
 /* a hairline top-accent used on active/hero cards */
-.edge-accent { position: relative; }
+.edge-accent {
+  position: relative;
+}
 .edge-accent::before {
-  content: ""; position: absolute; inset: 0 0 auto 0; height: 1px; border-radius: 14px 14px 0 0;
-  background: linear-gradient(90deg, transparent, rgba(122,162,255,0.5), rgba(78,212,146,0.5), transparent);
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 1px;
+  border-radius: 14px 14px 0 0;
+  background: linear-gradient(90deg, transparent, rgba(122, 162, 255, 0.5), rgba(78, 212, 146, 0.5), transparent);
 }
 
-@keyframes flowdash { to { stroke-dashoffset: -32; } }
-@keyframes livepulse { 0%,100% { opacity: 0.45; } 50% { opacity: 1; } }
-@keyframes breathe { 0%,100% { transform: scale(1); opacity: 0.9; } 50% { transform: scale(1.04); opacity: 1; } }
+/* The visualisation canvas keeps its dark ground in both themes, see the note
+   at the top of this file. */
+.viz-canvas {
+  background-color: var(--viz-bg);
+  border-color: var(--viz-border);
+}
 
-.live-dot { animation: livepulse 1.8s ease-in-out infinite; }
+@keyframes flowdash {
+  to {
+    stroke-dashoffset: -32;
+  }
+}
+@keyframes livepulse {
+  0%,
+  100% {
+    opacity: 0.45;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+@keyframes breathe {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.9;
+  }
+  50% {
+    transform: scale(1.04);
+    opacity: 1;
+  }
+}
 
-.hairline { border-color: #1E242E; }
+.live-dot {
+  animation: livepulse 1.8s ease-in-out infinite;
+}
+
+.hairline {
+  border-color: var(--card-border);
+}
 
 .kbd {
   font-family: var(--font-mono);
   font-size: 11px;
-  border: 1px solid #232A35;
-  background: #161B24;
+  border: 1px solid rgb(var(--c-line));
+  background: rgb(var(--c-raised));
   border-radius: 5px;
   padding: 1px 5px;
-  color: #8B95A6;
+  color: rgb(var(--c-mute));
 }
 
 /* status dots */
-.dot { height: 7px; width: 7px; border-radius: 9999px; display: inline-block; }
+.dot {
+  height: 7px;
+  width: 7px;
+  border-radius: 9999px;
+  display: inline-block;
+}
 
-::-webkit-scrollbar { width: 9px; height: 9px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: #1E242E; border-radius: 9px; }
-::-webkit-scrollbar-thumb:hover { background: #2A323F; }
+::-webkit-scrollbar {
+  width: 9px;
+  height: 9px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--scroll-thumb);
+  border-radius: 9px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--scroll-thumb-hover);
+}
 
-/* JSON token rendering (deep-dive only) */
-.tok-key { color: #6FA0FF; }
-.tok-str { color: #5BC98C; }
-.tok-act { color: #B79CFF; }
-.tok-punc { color: #5B6675; }
-
-a { text-decoration: none; }
+a {
+  text-decoration: none;
+}

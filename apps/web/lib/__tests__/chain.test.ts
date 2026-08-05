@@ -7,7 +7,8 @@
 // by whether a run happened.
 
 import { describe, expect, it } from "vitest";
-import { buildChain, illustrativeChain, isIllustrative } from "@/lib/chain";
+import { buildChain, decodeToken, formatClaims, illustrativeChain, isIllustrative,
+  jwtIoUrl } from "@/lib/chain";
 import { latestByStep, type ActivityEvent } from "@/lib/events";
 
 const ev = (over: Partial<ActivityEvent>): ActivityEvent => ({
@@ -181,5 +182,81 @@ describe("buildChain on a violation run", () => {
 
   it("is shorter than a normal run's chain", () => {
     expect(buildChain(violation).length).toBeLessThan(buildChain(fullRun()).length);
+  });
+});
+
+// --- jwt.io deep link + decoded view ---
+
+describe("jwtIoUrl", () => {
+  it("puts the token in the fragment, not the query", () => {
+    // a fragment is never transmitted to the server, so jwt.io parses the token
+    // locally and never receives a request containing the credential. A query
+    // string would send it.
+    const u = jwtIoUrl(signed({ scp: [READ] }));
+    expect(u.startsWith("https://jwt.io/#token=")).toBe(true);
+    expect(u).not.toContain("?");
+  });
+
+  it("round-trips the token unchanged", () => {
+    const t = signed({ scp: [WRITE], sub: "0oaEXAMPLEIntakeSvc1" });
+    const back = decodeURIComponent(jwtIoUrl(t).split("#token=")[1]);
+    expect(back).toBe(t);
+  });
+
+  it("leaves base64url characters untouched", () => {
+    // base64url uses - and _ which encodeURIComponent does not escape; if it did,
+    // jwt.io would receive a corrupted token
+    const t = "aGVhZGVy-x_y.cGF5bG9hZA-_.c2ln";
+    expect(jwtIoUrl(t)).toBe(`https://jwt.io/#token=${t}`);
+  });
+});
+
+describe("decodeToken", () => {
+  it("returns header and payload", () => {
+    const d = decodeToken(signed({ scp: [READ], sub: "x" }))!;
+    expect(d.header.alg).toBe("RS256");
+    expect(d.payload.scp).toEqual([READ]);
+  });
+
+  it("decodes non-ASCII claim values correctly", () => {
+    // these claims contain "·"; a Latin-1 vs UTF-8 mismatch here would render
+    // mojibake and, worse, differ between server and client render
+    const d = decodeToken(signed({ note: "routed · Hardware" }))!;
+    expect(d.payload.note).toBe("routed · Hardware");
+  });
+
+  it("reads an unsigned demo token too", () => {
+    const d = decodeToken(unsigned())!;
+    expect(d.header.alg).toBe("none");
+  });
+
+  it("returns null rather than throwing on junk", () => {
+    for (const bad of ["", "abc", "a.b", "...", "!!!.???.zzz"]) {
+      expect(decodeToken(bad)).toBeNull();
+    }
+  });
+
+  it("returns null when a segment is not JSON", () => {
+    const b = (x: string) => Buffer.from(x).toString("base64url");
+    expect(decodeToken(`${b("notjson")}.${b("{}")}.s`)).toBeNull();
+  });
+});
+
+describe("formatClaims", () => {
+  it("annotates epoch claims with a readable time", () => {
+    const out = formatClaims({ exp: 1783124119, sub: "x" });
+    expect(out).toContain("1783124119");
+    expect(out).toMatch(/2026-\d\d-\d\d \d\d:\d\d:\d\dZ/);
+  });
+
+  it("leaves non-time claims alone", () => {
+    const out = JSON.parse(formatClaims({ scp: ["ticket.read"], ver: 1 }));
+    expect(out.scp).toEqual(["ticket.read"]);
+    expect(out.ver).toBe(1);
+  });
+
+  it("preserves the nested act chain", () => {
+    const act = { sub: "wlpTWO", act: { sub: "wlpONE" } };
+    expect(JSON.parse(formatClaims({ act })).act).toEqual(act);
   });
 });

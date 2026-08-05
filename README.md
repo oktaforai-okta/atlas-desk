@@ -125,6 +125,12 @@ With no Okta or Jira credentials configured the orchestrator runs a **demo path*
 
 The header pill reads Live only when the orchestrator itself reports live. It is not driven by whether a URL happens to be configured.
 
+### Light and dark
+
+The UI follows the operating system preference, with an explicit override in the sidebar (match system / light / dark). A stored choice is applied to `<html>` by an inline script before first paint, so there is no flash of the wrong palette on load.
+
+Every colour is a CSS variable holding an `R G B` triple, composed by Tailwind as `rgb(var(--x) / <alpha-value>)`, which is what keeps the opacity modifiers used throughout (`bg-ok/10`, `border-bad/40`) working across both themes. The two SVG diagrams compute colours in JavaScript rather than CSS, so they read the resolved theme from `lib/theme.ts`. Their light palette is not a lightened copy of the dark one: status colour in those diagrams is information (idle vs running vs ok vs refused is how you read what happened), so each value was chosen to hold the same relative meaning against a white ground.
+
 To run fully live against your own tenant, see the environment table in [docs/OKTA_SETUP.md](docs/OKTA_SETUP.md).
 
 ## Tests
@@ -159,6 +165,7 @@ This is a demo built to prove an identity pattern, not a hardened production ser
 - **Two agents, not three.** Earlier versions of this demo narrated three agents while using two real Okta identities. That gap is now closed by describing what actually exists: two workload principals, split by capability. A third workload principal still exists in the reference tenant and is unused.
 - **One vaulted credential, not two.** The Jira credential released from the OPA vault is write-capable and belongs to Agent 2. Agent 1's read currently uses a configured environment credential rather than a separate read-only vaulted secret. The *authorization* boundary is real and enforced by Okta; the credential separation is not yet, and vaulting a second read-only secret is the clean follow-up.
 - **The orchestrator does not re-verify signatures** on tokens Okta just handed it over TLS. It treats Okta as an already-authenticated first party. A standalone resource server should verify against the issuer's JWKS; `okta/scope_guard.py` says so where it matters.
+- **The jwt.io link sends the token to Google Analytics.** Each token card links to `https://jwt.io/#token=<jwt>`, which pre-loads it for inspection. The token rides in the URL *fragment*, and it is tempting to conclude it therefore never leaves the browser. That is wrong, and it was measured rather than assumed: jwt.io runs Google Analytics, GA reports the full document location including the fragment as its `dl` parameter, and the live site issues two such POSTs per load, each carrying the whole JWT. Kept deliberately, for the same reasons the endpoint below is public and because these tokens are inert. **Do not pre-fill a token that actually authorizes something into a third-party page.**
 - **The last run's tokens are served publicly, on purpose.** `GET /api/last-run` returns the most recent run's still-valid credentials, so the chain-of-custody page shows real tokens to anyone rather than only to the browser tab that happened to run the pipeline. Letting people verify the tokens elsewhere is the entire point of that page.
 
   Why this is acceptable *here*, in order of how much weight each argument carries:

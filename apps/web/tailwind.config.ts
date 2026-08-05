@@ -1,29 +1,38 @@
 import type { Config } from "tailwindcss";
 
+/** Colours resolve to CSS variables so light and dark can swap without touching
+ *  a single className. The rgb(var(--x) / <alpha-value>) form is what preserves
+ *  Tailwind's opacity modifiers, which this codebase uses constantly
+ *  (bg-ok/10, border-bad/40, bg-accent/[0.06]). A plain var(--x) would break
+ *  every one of them silently. Palettes live in app/globals.css. */
+const v = (name: string) => `rgb(var(--c-${name}) / <alpha-value>)`;
+
 const config: Config = {
   content: ["./app/**/*.{ts,tsx}", "./components/**/*.{ts,tsx}"],
+  // an explicit choice sets .light / .dark on <html>; absent that, the media
+  // query in globals.css follows the system
+  darkMode: ["class", ":root.dark"],
   theme: {
     extend: {
       colors: {
-        // Atlas Service Desk, refined dark, tuned for projector legibility (brighter text, borders, accents)
-        bg: "#0B0E13",
-        panel: "#10141C",
-        surface: "#141A23",
-        raised: "#1A212C",
-        line: "#2A323F",     // visible separators when projected
-        line2: "#3A4456",
-        mute: "#8B96A8",     // secondary text, readable on a projector
-        soft: "#AAB4C3",
-        body: "#C7D0DD",     // primary reading text
-        ink: "#E4E9F1",
-        bright: "#F5F8FC",
-        accent: "#7AA2FF",   // brighter professional blue
-        ok: "#4ED492",       // resolved (brighter green)
-        warn: "#F2B450",     // in progress
-        bad: "#FF6168",      // failed / denied
-        triage: "#7AA2FF",   // Atlas Triage identity
-        resolve: "#4ED492",  // Atlas Resolution identity
-        fulfill: "#E0A34E",  // Atlas Fulfillment identity
+        bg: v("bg"),
+        panel: v("panel"),
+        surface: v("surface"),
+        raised: v("raised"),
+        line: v("line"),
+        line2: v("line2"),
+        mute: v("mute"),
+        soft: v("soft"),
+        body: v("body"),
+        ink: v("ink"),
+        bright: v("bright"),
+        accent: v("accent"),
+        ok: v("ok"),
+        warn: v("warn"),
+        bad: v("bad"),
+        triage: v("triage"),
+        resolve: v("resolve"),
+        fulfill: v("fulfill"),
       },
       fontFamily: {
         sans: ["var(--font-sans)", "system-ui", "sans-serif"],

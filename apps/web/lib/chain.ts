@@ -42,6 +42,91 @@ const s = (v: unknown): string | undefined =>
   typeof v === "string" && v ? v : undefined;
 
 /**
+ * Deep link that pre-loads the token into jwt.io.
+ *
+ * KNOWN TRADEOFF, measured rather than assumed. The token rides in the URL
+ * fragment, and a fragment is not part of the HTTP request line, so it is
+ * tempting to conclude the credential never leaves the browser. That conclusion
+ * is wrong: jwt.io runs Google Analytics, and GA reports the full document
+ * location, fragment included, as its `dl` parameter. Verified against the live
+ * site with a real token, two POSTs to analytics.google.com per page load, each
+ * carrying the whole JWT.
+ *
+ * Accepted deliberately, because these particular tokens are inert: their
+ * audiences sit under `.example` (an IANA-reserved TLD that cannot be
+ * registered), every onward use requires an agent private key that never leaves
+ * the orchestrator, they expire within the hour, and this project already
+ * publishes them at /api/last-run by design. Google receiving a copy is not a
+ * new exposure class here.
+ *
+ * It would be the wrong call for a token that actually authorizes something. If
+ * you reuse this pattern, that is the line.
+ *
+ * JWTs are base64url plus dots, all URL-safe, so encodeURIComponent leaves them
+ * untouched. It is applied anyway rather than assuming.
+ */
+export function jwtIoUrl(token: string): string {
+  return `https://jwt.io/#token=${encodeURIComponent(token)}`;
+}
+
+export interface DecodedToken {
+  header: Record<string, unknown>;
+  payload: Record<string, unknown>;
+}
+
+/**
+ * base64url -> UTF-8 string.
+ *
+ * Node's Buffer is UTF-8 by default while atob yields a Latin-1 byte string, so
+ * decoding the same segment on the server and in the browser produces different
+ * characters for anything non-ASCII (these claims contain "·"). That is a real
+ * hydration mismatch, not a cosmetic one, since the rendered JSON would differ.
+ * Hence the explicit TextDecoder on the client path.
+ */
+function b64urlToText(seg: string): string {
+  const padded = seg.replace(/-/g, "+").replace(/_/g, "/")
+    + "=".repeat((4 - (seg.length % 4)) % 4);
+  if (typeof window === "undefined") {
+    return Buffer.from(padded, "base64").toString("utf-8");
+  }
+  const bytes = Uint8Array.from(atob(padded), (c) => c.charCodeAt(0));
+  return new TextDecoder().decode(bytes);
+}
+
+/**
+ * Split, decode, parse. Display only: nothing here verifies a signature, and the
+ * UI says so. The encoded string plus jwt.io remains the actual proof, because a
+ * decoded view this app renders is a view this app could have fabricated.
+ */
+export function decodeToken(token: string): DecodedToken | null {
+  try {
+    const [h, p] = token.split(".");
+    if (!h || !p) return null;
+    const header = JSON.parse(b64urlToText(h));
+    const payload = JSON.parse(b64urlToText(p));
+    if (typeof header !== "object" || header === null) return null;
+    if (typeof payload !== "object" || payload === null) return null;
+    return { header, payload };
+  } catch {
+    return null;
+  }
+}
+
+/** Claims that are NumericDate, rendered with a readable form alongside. */
+const TIME_CLAIMS = new Set(["iat", "exp", "nbf", "auth_time"]);
+
+/** Pretty JSON, with epoch claims annotated so `exp` is legible at a glance. */
+export function formatClaims(payload: Record<string, unknown>): string {
+  const annotated: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(payload)) {
+    annotated[k] = TIME_CLAIMS.has(k) && typeof v === "number"
+      ? `${v}  (${new Date(v * 1000).toISOString().replace("T", " ").slice(0, 19)}Z)`
+      : v;
+  }
+  return JSON.stringify(annotated, null, 2);
+}
+
+/**
  * Build the chain from a real run's events. Order is the order the credentials
  * were actually obtained, so reading top to bottom follows the request.
  */
