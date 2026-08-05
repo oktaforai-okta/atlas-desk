@@ -147,7 +147,7 @@ cd apps/web && npm test
 
 # end to end against a live deployment: are the tokens really signed, do the
 # scopes really differ per hop, does the act chain really nest, does Okta really
-# refuse the write, does /api/last-run leak anything
+# refuse the write
 python3 scripts/verify_live.py [orchestrator-url]
 ```
 
@@ -166,15 +166,8 @@ This is a demo built to prove an identity pattern, not a hardened production ser
 - **One vaulted credential, not two.** The Jira credential released from the OPA vault is write-capable and belongs to Agent 2. Agent 1's read currently uses a configured environment credential rather than a separate read-only vaulted secret. The *authorization* boundary is real and enforced by Okta; the credential separation is not yet, and vaulting a second read-only secret is the clean follow-up.
 - **The orchestrator does not re-verify signatures** on tokens Okta just handed it over TLS. It treats Okta as an already-authenticated first party. A standalone resource server should verify against the issuer's JWKS; `okta/scope_guard.py` says so where it matters.
 - **The jwt.io link sends the token to Google Analytics.** Each token card links to `https://jwt.io/#token=<jwt>`, which pre-loads it for inspection. The token rides in the URL *fragment*, and it is tempting to conclude it therefore never leaves the browser. That is wrong, and it was measured rather than assumed: jwt.io runs Google Analytics, GA reports the full document location including the fragment as its `dl` parameter, and the live site issues two such POSTs per load, each carrying the whole JWT. Kept deliberately, for the same reasons the endpoint below is public and because these tokens are inert. **Do not pre-fill a token that actually authorizes something into a third-party page.**
-- **The last run's tokens are served publicly, on purpose.** `GET /api/last-run` returns the most recent run's still-valid credentials, so the chain-of-custody page shows real tokens to anyone rather than only to the browser tab that happened to run the pipeline. Letting people verify the tokens elsewhere is the entire point of that page.
+- **Tokens are shown only to the browser that produced them.** `/tokens` reads the run out of `sessionStorage` and shows an empty state otherwise. There is no server-side retention and no endpoint that serves a previous run.
 
-  Why this is acceptable *here*, in order of how much weight each argument carries:
-
-  1. **Every onward use requires a private key we do not publish.** Exchanging one of these tokens for another, or releasing the vaulted Jira credential, requires the agent's `private_key_jwt` client assertion. The private JWKs live only in the orchestrator's environment. A token on its own does nothing.
-  2. **No resource server can exist at these audiences.** They sit under `atlas.acme.example`, and `.example` is an IANA-reserved TLD (RFC 2606) that cannot be registered.
-  3. **The exposure window equals the credential's own lifetime.** Expired tokens are filtered out of the response, so the endpoint is a live view rather than an accumulating archive. ID-JAGs last 5 minutes, access tokens 1 hour.
-  4. **The payload carries no ticket content.** Only the credential-bearing steps are retained, and their data is limited to scope and principal ids. The duplicate-search results, which contain other people's real Jira ticket summaries, are deliberately excluded.
-
-  The residual risk, stated plainly: if someone later built a real resource server at one of those audiences and trusted `aud` without further checks, a published token would be replayable within its lifetime. **Do not copy this pattern for tokens that actually grant access to something.**
+  This took two wrong turns to get right, and both are worth recording. Showing illustrative placeholder tokens on a cold landing made the page look static and fabricated. Replacing that with an endpoint that served the orchestrator's last run to anybody fixed the appearance but was worse: a visitor who had clicked nothing was handed real credentials and had no way to know whose they were. The credential belongs to the run that produced it and to the person who watched it happen, so now there is simply nothing to see until you run something.
 - **`/api/run` is rate limited, not authenticated.** It costs real money and has real side effects, so it enforces a per-IP limit and a CORS origin allowlist. Neither is authentication. Do not expose an endpoint shaped like this without auth in a context where abuse matters.
 - **If the vault path is not configured** the app falls back to an environment credential rather than failing closed, and the UI narrates the degraded path differently and emits no System Log id for an event that did not happen. It never fabricates a vault event. See [the honesty rule](docs/ARCHITECTURE.md#honesty-by-design).

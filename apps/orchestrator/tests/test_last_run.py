@@ -1,111 +1,14 @@
-"""The /api/last-run credential window, and the vaulted-secret extractor.
+"""Vaulted-secret extraction, live-readiness, and the demo heuristics.
 
-/api/last-run publishes real Okta tokens so the chain-of-custody page works for
-anyone, not just the tab that ran the pipeline. The property these tests protect
-is that the published window equals the credential's own lifetime: an expired
-token must never be served, because it proves nothing and only widens exposure.
+This file used to also cover the /api/last-run credential window. That endpoint is
+gone: the server no longer retains a run's tokens, because handing credentials to
+a visitor who ran nothing was the wrong trade. Tokens now live only in the browser
+that produced them.
 """
-import base64
-import json
-import time
-
 import pytest
 
 import main
 
-
-def tok(exp=None, extra=None):
-    payload = dict(extra or {})
-    if exp is not None:
-        payload["exp"] = exp
-    def seg(d):
-        return base64.urlsafe_b64encode(json.dumps(d).encode()).rstrip(b"=").decode()
-    return f"{seg({'alg': 'none'})}.{seg(payload)}.sig"
-
-
-NOW = int(time.time())
-LIVE = NOW + 600
-DEAD = NOW - 10
-
-
-def served(events):
-    return {k for e in main._unexpired(events) for k in (e.get("raw_tokens") or {})}
-
-
-class TestUnexpired:
-    def test_keeps_a_live_token(self):
-        assert served([{"step": "read_grant", "raw_tokens": {"t1": tok(LIVE)}}]) == {"t1"}
-
-    def test_drops_an_expired_token(self):
-        assert served([{"step": "read_grant", "raw_tokens": {"t1": tok(DEAD)}}]) == set()
-
-    def test_filters_per_token_within_one_event(self):
-        """An ID-JAG expires in 5 minutes and its access token in an hour, so one
-        event legitimately holds a dead token beside a live one."""
-        evs = [{"step": "a2a_delegate", "raw_tokens": {"idjag1": tok(DEAD), "t_res": tok(LIVE)}}]
-        assert served(evs) == {"t_res"}
-
-    def test_keeps_an_event_whose_tokens_are_all_dead(self):
-        """The step still happened, so the card must still render.
-
-        Dropping the whole event was the earlier behaviour and it broke the
-        narrative: ID-JAGs lapse in 5 minutes while access tokens last an hour, so
-        a quarter-hour-old run lost precisely the two delegation grants, and the
-        surviving card's copy still referred to "the grant above". The value is
-        withheld; the step is not.
-        """
-        evs = [{"step": "a2a_delegate", "raw_tokens": {"idjag1": tok(DEAD)}}]
-        out = main._unexpired(evs)
-        assert len(out) == 1
-        assert out[0]["raw_tokens"] is None
-        assert out[0]["expired_tokens"] == ["idjag1"]
-
-    def test_names_only_the_tokens_it_withheld(self):
-        evs = [{"step": "a2a_delegate",
-                "raw_tokens": {"idjag1": tok(DEAD), "t_res": tok(LIVE)}}]
-        out = main._unexpired(evs)
-        assert out[0]["expired_tokens"] == ["idjag1"]
-        assert set(out[0]["raw_tokens"]) == {"t_res"}
-
-    def test_adds_no_expired_key_when_nothing_lapsed(self):
-        """Absence of the key is how the UI knows there is nothing to explain."""
-        evs = [{"step": "read_grant", "raw_tokens": {"t1": tok(LIVE)}}]
-        assert "expired_tokens" not in main._unexpired(evs)[0]
-
-    def test_retains_the_denial_step_which_has_no_token(self):
-        """The refusal is the point of the demo and carries no credential, so it
-        must survive a filter that keys off token expiry."""
-        evs = [{"step": "write_denied", "raw_tokens": None,
-                "data": {"denied": True, "error": "invalid_scope"}}]
-        out = main._unexpired(evs)
-        assert len(out) == 1 and out[0]["step"] == "write_denied"
-
-    def test_keeps_a_token_with_no_exp_claim(self):
-        """Demo-mode tokens may omit exp. Withholding them would make local
-        development look broken for no safety gain, since they are already
-        self-evidently fake (alg=none)."""
-        assert served([{"step": "x", "raw_tokens": {"t": tok(None)}}]) == {"t"}
-
-    @pytest.mark.parametrize("bad", ["not-a-jwt", "a.b", "", "x.!!!!.z", "a..c"])
-    def test_drops_undecodable_tokens(self, bad):
-        """Fail closed: if we cannot read exp we do not publish it."""
-        assert served([{"step": "x", "raw_tokens": {"t": bad}}]) == set()
-
-    def test_expiry_is_evaluated_at_call_time(self):
-        """A token live now must stop being served once it lapses, without the
-        process restarting."""
-        near = int(time.time()) + 1
-        evs = [{"step": "x", "raw_tokens": {"t": tok(near)}}]
-        assert served(evs) == {"t"}
-        time.sleep(1.2)
-        assert served(evs) == set()
-
-    def test_does_not_mutate_the_stored_run(self):
-        """_LAST_RUN is module state reused across requests; filtering must not
-        destroy the original, or one stale request would empty it permanently."""
-        evs = [{"step": "a2a_delegate", "raw_tokens": {"idjag1": tok(DEAD), "t_res": tok(LIVE)}}]
-        main._unexpired(evs)
-        assert set(evs[0]["raw_tokens"]) == {"idjag1", "t_res"}
 
 
 class TestExtractVaultedSecret:

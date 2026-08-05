@@ -14,7 +14,7 @@
 // request containing the credential.
 
 import { useState } from "react";
-import { Copy, Check, ExternalLink, ShieldOff, ChevronRight, Clock } from "lucide-react";
+import { Copy, Check, ExternalLink, ShieldOff, ChevronRight } from "lucide-react";
 import { decodeToken, formatClaims, jwtIoUrl, type ChainStep } from "@/lib/chain";
 
 function DecodedBlock({ label, json }: { label: string; json: string }) {
@@ -34,7 +34,6 @@ const KIND_STYLE: Record<ChainStep["kind"], string> = {
   "Access Token": "border-accent/40 text-accent",
   "ID-JAG": "border-triage/40 text-triage",
   Denied: "border-bad/40 text-bad",
-  Expired: "border-line2 text-mute",
 };
 
 function shorten(id?: string): string {
@@ -59,14 +58,11 @@ export default function TokenCard({ step }: { step: ChainStep }) {
   }
 
   const denied = step.kind === "Denied";
-  const expired = step.kind === "Expired";
 
   return (
     <div
       className={`rounded-xl border bg-panel p-4 ${
-        denied ? "border-bad/30 bg-bad/[0.04]"
-          : expired ? "border-line border-dashed opacity-80"
-          : "border-line"
+        denied ? "border-bad/30 bg-bad/[0.04]" : "border-line"
       }`}
     >
       {/* header: who → whom, what kind, what scope */}
@@ -139,24 +135,6 @@ export default function TokenCard({ step }: { step: ChainStep }) {
           <div className="mt-1 font-mono text-[12px] leading-relaxed text-mute [overflow-wrap:anywhere]">
             {step.denial.description}
           </div>
-        </div>
-      )}
-
-      {/* the credential lapsed: say so, rather than leaving a hole where a card
-          was. ID-JAGs live five minutes by design, so this is the mechanism
-          showing itself rather than a failure. */}
-      {expired && !step.token && (
-        <div className="mt-3 rounded-lg border border-dashed border-line bg-[var(--code-bg)] p-3">
-          <div className="mb-1 flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-mute">
-            <Clock className="h-3.5 w-3.5" /> Expired, withheld
-          </div>
-          <p className="text-[12px] leading-relaxed text-mute">
-            This grant was issued and used, then lapsed. ID-JAGs are valid for five
-            minutes by design, so they outlive a run by less than the access tokens
-            they produce. The orchestrator stops publishing a credential once it
-            expires, so there is nothing left to copy.{" "}
-            <span className="text-soft">Run a simulation to see a live one.</span>
-          </p>
         </div>
       )}
 

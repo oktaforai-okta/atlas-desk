@@ -54,23 +54,18 @@ class ActivityEvent:
 class EventStream:
     """Per-run async queue drained by the SSE endpoint.
 
-    Also tees the credential-bearing events into ``captured`` so the run's tokens
-    outlive the stream. The chain-of-custody page needs them after the fact, and
-    it cannot rely on the browser: sessionStorage is per-tab, so anyone arriving
-    from a shared link or a second tab would otherwise see placeholders.
+    Deliberately does not retain credentials past the stream. Tokens belong to the
+    run that produced them and to the browser watching it; the server keeping a
+    copy so other visitors can see them was a wrong turn, since a viewer who did
+    not run anything has no business being shown a credential.
     """
 
     def __init__(self) -> None:
         self._q: asyncio.Queue = asyncio.Queue()
-        self.captured: list[dict] = []
 
     async def emit(self, e: ActivityEvent) -> None:
         if e.ts is None:
             e.ts = time.time()  # stamped here so no caller can forget it
-        if e.status == STATUS_OK and (e.raw_tokens or e.step == "write_denied"):
-            d = e.to_dict()
-            # last write per step wins, matching the frontend's latestByStep
-            self.captured = [c for c in self.captured if c["step"] != d["step"]] + [d]
         await self._q.put(e)
 
     async def close(self) -> None:

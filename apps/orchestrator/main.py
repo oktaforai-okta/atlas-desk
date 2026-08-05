@@ -210,80 +210,6 @@ def live_ready() -> bool:
     return not missing_live_env()
 
 
-# The most recent run's credential-bearing events, so /tokens can show real tokens
-# to anyone rather than only to the tab that happened to run the pipeline.
-#
-# On exposing these deliberately: they are real, signed, short-lived Okta tokens
-# (ID-JAGs 5 min, access tokens 1 hour) whose audiences are identifiers for agents
-# in this demo, not live endpoints. Nothing anywhere validates them, so they
-# authorize nothing outside the narrative. That is what makes publishing them for
-# inspection acceptable HERE. It is not a pattern to copy for tokens that actually
-# grant access to something.
-_LAST_RUN: dict = {"events": [], "captured_at": None, "mode": None, "path": None}
-
-
-def _unexpired(events: list[dict]) -> list[dict]:
-    """Withhold expired token VALUES while keeping the step they belonged to.
-
-    Two requirements pull against each other here.
-
-    The exposure window should equal the credential's own lifetime, so a dead token
-    must not keep being served: it proves nothing and only widens the window.
-
-    But the step still happened, and dropping it silently breaks the narrative.
-    ID-JAGs live 5 minutes while access tokens live an hour, so a quarter-hour-old
-    run would lose exactly the two delegation grants, which are the most important
-    credentials in the chain. Worse, the surviving card's own copy refers to "the
-    grant above", leaving a dangling reference to something no longer rendered.
-
-    So the event survives with `expired_tokens` naming what was withheld, and the
-    UI renders those as expired rather than pretending they never existed. That
-    turns the gap into the point: ID-JAGs are deliberately short-lived.
-
-    Claims are read without verification purely to find exp. A forged exp would only
-    cause us to withhold a token, so there is nothing to gain by lying to us.
-    """
-    now = time.time()
-
-    def alive(tok: str) -> bool:
-        try:
-            seg = tok.split(".")[1]
-            seg += "=" * ((4 - len(seg) % 4) % 4)
-            exp = json.loads(base64.urlsafe_b64decode(seg)).get("exp")
-            return exp is None or float(exp) > now
-        except Exception:
-            return False
-
-    out = []
-    for e in events:
-        raw = e.get("raw_tokens") or {}
-        live = {k: v for k, v in raw.items() if alive(v)}
-        dead = sorted(set(raw) - set(live))
-        # a step with no credential at all (the refusal) still belongs in the chain
-        if not raw and e.get("step") != "write_denied":
-            continue
-        out.append({**e, "raw_tokens": live or None,
-                    **({"expired_tokens": dead} if dead else {})})
-    return out
-
-
-@app.get("/api/last-run")
-async def last_run():
-    """The most recent run's still-valid tokens, for the chain-of-custody view.
-
-    Expired credentials are withheld, so a stale run degrades to the illustrative
-    examples rather than presenting dead tokens as live ones.
-    """
-    events = _unexpired(_LAST_RUN.get("events") or [])
-    # stale means no live credential remains at all. A run whose short-lived
-    # ID-JAGs have lapsed but whose access tokens are current is still worth
-    # serving, with the lapsed ones marked.
-    if not any(e.get("raw_tokens") for e in events):
-        return JSONResponse({"events": [], "captured_at": None,
-                             "mode": _LAST_RUN.get("mode"), "expired": True})
-    return JSONResponse({**_LAST_RUN, "events": events, "expired": False})
-
-
 @app.get("/healthz")
 async def healthz():
     missing = missing_live_env()
@@ -347,14 +273,6 @@ async def _drive(stream: EventStream, seed: int, inbound: Optional[dict] = None,
         await stream.emit(ActivityEvent("error", "Atlas", "okta", f"Pipeline error: {e}",
                                         status=STATUS_ERROR, primary=True))
     finally:
-        # Retain whatever credentials this run produced, even a partial set, so the
-        # chain-of-custody view reflects reality rather than falling back to examples.
-        if stream.captured:
-            _LAST_RUN.update({"events": stream.captured, "captured_at": time.time(),
-                              "mode": "live" if live_ready() else "demo",
-                              "path": mode})
-            log.info("retained %d credential events (%s) for /api/last-run",
-                     len(stream.captured), mode)
         await stream.close()
 
 

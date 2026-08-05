@@ -1,60 +1,38 @@
 "use client";
 
-// Chain of custody: one card per credential, in the order they were obtained.
+// Chain of custody: one card per credential the run in THIS browser produced.
 //
-// Read top to bottom and the story is legible without any explanation from us:
-// Agent 1 gets ticket.read, Agent 1 is refused ticket.write, Agent 1 delegates,
-// Agent 2 gets ticket.write. Every card carries the encoded token so a viewer
-// can verify it somewhere we do not control.
+// Nothing is shown before a run, and that was arrived at the long way round.
+// Illustrative placeholder tokens made the page look static and fabricated.
+// Serving the last run by anyone from the orchestrator fixed that but replaced it
+// with a worse question: a viewer who had clicked nothing was handed real
+// credentials and reasonably asked whose they were.
+//
+// A credential belongs to the run that produced it and to the person who watched
+// it happen. So: no run, no tokens, and an empty state that says what to do.
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { KeyRound, Info, ArrowLeft, ShieldCheck, History } from "lucide-react";
+import { KeyRound, Info, ArrowLeft, ShieldCheck, Play } from "lucide-react";
 import TokenCard from "@/components/TokenCard";
-import { buildChain, illustrativeChain, isIllustrative, type ChainStep } from "@/lib/chain";
-import { readCapturedRun, fetchLastRun } from "@/lib/events";
-
-type Source = "this-run" | "last-run" | "examples";
+import { buildChain, isIllustrative, type ChainStep } from "@/lib/chain";
+import { readCapturedRun } from "@/lib/events";
 
 export default function TokensPage() {
   // Read on mount rather than during render: sessionStorage does not exist on the
   // server, and seeding state from it directly desynchronises the two renders.
-  const [steps, setSteps] = useState<ChainStep[]>([]);
-  const [source, setSource] = useState<Source>("examples");
+  const [steps, setSteps] = useState<ChainStep[] | null>(null);
   const [capturedAt, setCapturedAt] = useState<number | null>(null);
-  const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    let alive = true;
-    (async () => {
-      // 1. this tab's own run, which is what the viewer just watched happen
-      const mine = readCapturedRun();
-      if (mine?.events?.length) {
-        if (!alive) return;
-        setSteps(buildChain(mine.events));
-        setSource("this-run");
-        setCapturedAt(mine.capturedAt ?? null);
-        setReady(true);
-        return;
-      }
-      // 2. the orchestrator's last run, so a shared link still shows real tokens
-      const last = await fetchLastRun();
-      if (!alive) return;
-      if (last?.events?.length) {
-        setSteps(buildChain(last.events));
-        setSource("last-run");
-        setCapturedAt(last.capturedAt || null);
-      } else {
-        // 3. nothing has ever run against this backend
-        setSteps(illustrativeChain());
-        setSource("examples");
-      }
-      setReady(true);
-    })();
-    return () => { alive = false; };
+    const run = readCapturedRun();
+    setSteps(run?.events?.length ? buildChain(run.events) : []);
+    setCapturedAt(run?.capturedAt ?? null);
   }, []);
 
-  const illustrative = !ready || isIllustrative(steps);
+  const ready = steps !== null;
+  const hasRun = ready && steps.length > 0;
+  const illustrative = hasRun && isIllustrative(steps);
   const ago = (() => {
     if (!capturedAt) return null;
     const s = Math.max(0, Math.round((Date.now() - capturedAt) / 1000));
@@ -86,70 +64,70 @@ export default function TokensPage() {
         <span className="text-mute">Agent 2 only</span>
       </div>
 
-      {illustrative ? (
-        <div className="mt-5 flex items-start gap-2 rounded-lg border border-warn/30 bg-warn/[0.06] px-3.5 py-3 text-[13px] text-warn">
-          <Info className="mt-0.5 h-4 w-4 shrink-0" />
-          <div>
-            These are illustrative examples, not real tokens. Their header says{" "}
-            <span className="font-mono">alg: none</span> and their signature segment says
-            so in words.{" "}
-            <Link href="/" className="underline hover:opacity-80">
-              Simulate a ticket
-            </Link>{" "}
-            to capture a real signed set.
-          </div>
+      {/* Nothing has run in this browser yet. Say so and point at the door, rather
+          than filling the space with credentials the viewer did not create. */}
+      {ready && !hasRun && (
+        <div className="mt-8 rounded-xl border border-dashed border-line bg-panel px-6 py-12 text-center">
+          <KeyRound className="mx-auto h-7 w-7 text-line2" />
+          <h2 className="mt-3 text-[17px] font-semibold text-ink">No run yet</h2>
+          <p className="mx-auto mt-2 max-w-md text-[14px] leading-relaxed text-mute">
+            Tokens appear here once you run the pipeline. They are the real credentials
+            from your own run, so there is nothing to show until there has been one.
+          </p>
+          <Link
+            href="/"
+            className="mt-5 inline-flex items-center gap-1.5 rounded-lg bg-gradient-to-b from-accent to-[#5B86E8] px-3.5 py-2 text-[15px] font-medium text-white shadow-[0_2px_12px_-2px_rgba(122,162,255,0.5)] transition hover:brightness-110"
+          >
+            <Play className="h-4 w-4" /> Run a simulation
+          </Link>
         </div>
-      ) : (
-        source === "this-run" ? (
-          <div className="mt-5 flex items-start gap-2 rounded-lg border border-ok/30 bg-ok/[0.06] px-3.5 py-3 text-[13px] text-ok">
-            <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0" />
-            <div>
-              Real Okta-issued tokens, signed <span className="font-mono">RS256</span>, captured
-              from the run you just watched{ago ? ` (${ago})` : ""}.
-            </div>
-          </div>
-        ) : (
-          /* Somebody else's run. Saying so plainly matters: a viewer who lands here
-             without having clicked anything reasonably wonders where these came
-             from, and "is this even real" is exactly the doubt this page exists to
-             remove. */
-          <div className="mt-5 flex items-start gap-2 rounded-lg border border-accent/30 bg-accent/[0.06] px-3.5 py-3 text-[13px] text-accent">
-            <History className="mt-0.5 h-4 w-4 shrink-0" />
-            <div>
-              <span className="font-semibold">This is not your run.</span> These are real
-              Okta-issued tokens, signed <span className="font-mono">RS256</span>, from the
-              last time anyone ran this demo{ago ? `, ${ago}` : ""}. They are shown so a
-              shared link is never empty.{" "}
-              <Link href="/" className="underline hover:opacity-80">
-                Run your own
-              </Link>{" "}
-              to watch the pipeline produce a fresh set.
-            </div>
-          </div>
-        )
       )}
 
-      <div className="mt-6 space-y-3">
-        {steps.map((step) => (
-          <TokenCard key={`${step.n}-${step.title}-${step.kind}`} step={step} />
-        ))}
-      </div>
+      {hasRun && (
+        <>
+          {illustrative ? (
+            <div className="mt-5 flex items-start gap-2 rounded-lg border border-warn/30 bg-warn/[0.06] px-3.5 py-3 text-[13px] text-warn">
+              <Info className="mt-0.5 h-4 w-4 shrink-0" />
+              <div>
+                Your run produced unsigned demo tokens, because the orchestrator is not
+                configured against a live Okta tenant. Their header says{" "}
+                <span className="font-mono">alg: none</span> and their signature segment
+                says so in words. The shapes are real; the signatures are not.
+              </div>
+            </div>
+          ) : (
+            <div className="mt-5 flex items-start gap-2 rounded-lg border border-ok/30 bg-ok/[0.06] px-3.5 py-3 text-[13px] text-ok">
+              <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0" />
+              <div>
+                Real Okta-issued tokens, signed <span className="font-mono">RS256</span>,
+                from your run{ago ? ` (${ago})` : ""}.
+              </div>
+            </div>
+          )}
 
-      <p className="mt-6 max-w-2xl text-[13px] leading-relaxed text-mute">
-        Copy any token above, open{" "}
-        <a
-          href="https://jwt.io"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="text-accent hover:underline"
-        >
-          jwt.io
-        </a>
-        , and paste it into the Encoded field. Check the <span className="font-mono">scp</span>{" "}
-        claim against what this page says the agent was allowed to do, and the{" "}
-        <span className="font-mono">act</span> claim for who acted on whose authority.
-        Nothing here asks you to trust this page.
-      </p>
+          <div className="mt-6 space-y-3">
+            {steps.map((step) => (
+              <TokenCard key={`${step.n}-${step.title}-${step.kind}`} step={step} />
+            ))}
+          </div>
+
+          <p className="mt-6 max-w-2xl text-[13px] leading-relaxed text-mute">
+            Open any token in{" "}
+            <a
+              href="https://jwt.io"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-accent hover:underline"
+            >
+              jwt.io
+            </a>
+            , then check the <span className="font-mono">scp</span> claim against what
+            this page says the agent was allowed to do, and the{" "}
+            <span className="font-mono">act</span> claim for who acted on whose
+            authority. Nothing here asks you to trust this page.
+          </p>
+        </>
+      )}
 
       <Link
         href="/"

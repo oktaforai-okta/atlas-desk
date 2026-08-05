@@ -58,6 +58,12 @@ export type RunMode = "normal" | "violation";
 
 export const RUN_KEY = "atlas:lastRun";
 
+// Per-tab on purpose. A credential belongs to the run that produced it and to the
+// browser that watched it happen. An earlier version had the server retain the
+// last run so any visitor saw real tokens; that removed one confusion (a page
+// that looked static) and created a worse one (credentials handed to someone who
+// had run nothing). The empty state on /tokens is the right answer instead.
+
 export interface CapturedRun {
   events: ActivityEvent[];
   capturedAt: number;
@@ -87,25 +93,6 @@ export function readCapturedRun(): CapturedRun | null {
     if (!raw) return null;
     const parsed = JSON.parse(raw) as CapturedRun;
     return Array.isArray(parsed?.events) ? parsed : null;
-  } catch {
-    return null;
-  }
-}
-
-/** The orchestrator's most recent run.
- *
- *  sessionStorage is per-tab, so it only ever helps the tab that ran the pipeline.
- *  Anyone following a shared link, opening a second tab, or returning later would
- *  see illustrative placeholders and reasonably conclude the page is static. This
- *  asks the backend instead, so the credentials shown are real for everybody. */
-export async function fetchLastRun(): Promise<CapturedRun | null> {
-  if (!ORCH) return null;
-  try {
-    const res = await fetch(`${ORCH}/api/last-run`);
-    if (!res.ok) return null;
-    const j = (await res.json()) as { events?: ActivityEvent[]; captured_at?: number };
-    if (!Array.isArray(j?.events) || j.events.length === 0) return null;
-    return { events: j.events, capturedAt: (j.captured_at ?? 0) * 1000 };
   } catch {
     return null;
   }

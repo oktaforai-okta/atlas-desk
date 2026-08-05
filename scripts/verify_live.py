@@ -4,8 +4,7 @@
 The unit suites (apps/orchestrator/tests, apps/web/lib/__tests__) cover pure
 logic. This covers the claims that only a real deployment can settle: that the
 tokens are genuinely signed, that the scopes actually differ per hop, that the
-act chain nests, that Okta really refuses the write, and that /api/last-run does
-not leak ticket content.
+act chain nests, and that Okta really refuses the write.
 
 Needs no credentials. It drives the same public endpoints a browser does.
 
@@ -30,9 +29,6 @@ ORIGIN = "https://atlas-desk.vercel.app"
 READ, WRITE = "ticket.read", "ticket.write"
 # tokens the pipeline should produce, and the scope each must carry
 EXPECTED = {"t1": READ, "idjag1": READ, "t_res": READ, "idjag2": WRITE, "t_ful": WRITE}
-# claim keys that must never appear in the publicly served last-run payload
-FORBIDDEN = ("similar", "resolution", "requester", "issue_key", "issue_url", "reason",
-             "body", "title")
 
 results: list[tuple[bool, str]] = []
 
@@ -172,21 +168,6 @@ check(set(bad_tokens) == {"t1"}, "only the read token exists", f"got {sorted(bad
 if "t1" in bad_tokens:
     check(WRITE not in scopes(claims(bad_tokens["t1"])),
           "the one token it holds carries no write scope")
-
-# ---------------------------------------------------------------- last-run
-print("\n/api/last-run (published for the chain-of-custody page)")
-lr = get("/api/last-run")
-served = {k for e in lr.get("events", []) for k in (e.get("raw_tokens") or {})}
-check(bool(served), "serves the run's credentials", f"{sorted(served)}")
-check(lr.get("expired") is False, "not flagged expired")
-blob = json.dumps(lr)
-leaked = [k for k in FORBIDDEN if f'"{k}"' in blob]
-check(not leaked, "carries no ticket or customer content", f"leaked={leaked}" if leaked else "")
-check(not any(e.get("step") == "jira_read" for e in lr.get("events", [])),
-      "excludes jira_read, which holds other people's ticket summaries")
-expired_served = [k for e in lr.get("events", []) for k, v in (e.get("raw_tokens") or {}).items()
-                  if (claims(v).get("exp") or float("inf")) < time.time()]
-check(not expired_served, "serves no expired credential", f"{expired_served}")
 
 # ---------------------------------------------------------------- summary
 failed = [label for ok_, label in results if not ok_]

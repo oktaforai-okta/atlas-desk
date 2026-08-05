@@ -7,8 +7,7 @@
 // by whether a run happened.
 
 import { describe, expect, it } from "vitest";
-import { buildChain, decodeToken, formatClaims, illustrativeChain, isIllustrative,
-  jwtIoUrl } from "@/lib/chain";
+import { buildChain, decodeToken, formatClaims, isIllustrative, jwtIoUrl } from "@/lib/chain";
 import { latestByStep, type ActivityEvent } from "@/lib/events";
 
 const ev = (over: Partial<ActivityEvent>): ActivityEvent => ({
@@ -106,7 +105,6 @@ describe("buildChain", () => {
 
 describe("isIllustrative", () => {
   it("detects an unsigned demo token", () => {
-    expect(isIllustrative(illustrativeChain())).toBe(true);
     expect(isIllustrative(buildChain([
       ev({ step: "read_grant", raw_tokens: { t1: unsigned() }, data: { scope: READ } }),
     ]))).toBe(true);
@@ -126,25 +124,6 @@ describe("isIllustrative", () => {
       step: "read_grant", raw_tokens: { t1: unsigned() }, data: { scope: READ } })]);
     expect(chain).toHaveLength(1);
     expect(isIllustrative(chain)).toBe(true);
-  });
-});
-
-describe("illustrativeChain", () => {
-  it("never contains a real tenant identifier", () => {
-    const blob = JSON.stringify(illustrativeChain());
-    expect(blob).not.toMatch(/wlp10|0oa10|aus10|oktaforai/);
-    expect(blob).toMatch(/EXAMPLE/);
-  });
-
-  it("labels every token as unsigned in words as well as in the header", () => {
-    for (const s of illustrativeChain()) {
-      if (s.token) expect(s.token).toContain("DEMO-UNSIGNED-NOT-A-REAL-OKTA-TOKEN");
-    }
-  });
-
-  it("mirrors the real chain's shape so the fallback is not misleading", () => {
-    expect(illustrativeChain().map((s) => s.kind))
-      .toEqual(buildChain(fullRun()).map((s) => s.kind));
   });
 });
 
@@ -267,45 +246,3 @@ describe("formatClaims", () => {
 // minutes old legitimately has live access tokens and dead grants. Dropping the
 // grant's card entirely broke the narrative and left the next card's copy
 // referring to "the grant above", which was no longer rendered.
-
-describe("buildChain with lapsed grants", () => {
-  const fifteenMinutesOn = (): ActivityEvent[] => [
-    ev({ step: "read_grant", raw_tokens: { t1: signed() }, data: { scope: READ } }),
-    // the orchestrator withheld idjag1 and said so
-    { ...ev({ step: "a2a_delegate", raw_tokens: { t_res: signed() },
-              data: { scope: READ, caller: "wlpONE", callee: "wlpTWO" } }),
-      expired_tokens: ["idjag1"] } as ActivityEvent,
-    { ...ev({ step: "write_grant", raw_tokens: { t_ful: signed() },
-              data: { scope: WRITE, caller: "wlpTWO" } }),
-      expired_tokens: ["idjag2"] } as ActivityEvent,
-  ];
-
-  it("still renders a card for the lapsed grant", () => {
-    const c = buildChain(fifteenMinutesOn());
-    expect(c.map((x) => x.kind)).toEqual([
-      "Access Token", "Expired", "Access Token", "Expired", "Access Token",
-    ]);
-  });
-
-  it("marks it expired and carries no token to copy", () => {
-    const grant = buildChain(fifteenMinutesOn()).find((x) => x.kind === "Expired")!;
-    expect(grant.expired).toBe(true);
-    expect(grant.token).toBeUndefined();
-  });
-
-  it("keeps the hop identity so the chain still reads end to end", () => {
-    const grant = buildChain(fifteenMinutesOn()).find((x) => x.kind === "Expired")!;
-    expect(grant.title).toBe("Agent 1 → Agent 2");
-    expect(grant.scope).toBe(READ);
-  });
-
-  it("does not treat a run with lapsed grants as illustrative", () => {
-    // the surviving access tokens are real and RS256; the banner must not claim
-    // the whole page is examples just because the grants aged out
-    expect(isIllustrative(buildChain(fifteenMinutesOn()))).toBe(false);
-  });
-
-  it("renders no expired card when nothing lapsed", () => {
-    expect(buildChain(fullRun()).some((x) => x.kind === "Expired")).toBe(false);
-  });
-});
