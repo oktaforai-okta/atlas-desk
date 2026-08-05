@@ -42,6 +42,14 @@ describe("node status folding", () => {
     expect(deriveAgentFlowState([ev("read_grant"), ev("classify", "error")])
       .nodes.agent1).toBe("error");
   });
+
+  it("lights the inbound node on inbound and the intake service on the read grant", () => {
+    // The flow now models the trigger event and the service client as distinct
+    // nodes, mirroring the architecture fabric.
+    const s = deriveAgentFlowState([ev("inbound"), ev("read_grant")]);
+    expect(s.nodes.inbound).toBe("ok");
+    expect(s.nodes.svc).toBe("ok");
+  });
 });
 
 describe("the refused write", () => {
@@ -73,7 +81,7 @@ describe("edges", () => {
       ev("read_grant", "ok", { data: { scope: "ticket.read" } }),
       ev("jira_write", "ok", { data: { scope: "ticket.write" } }),
     ]);
-    expect(s.edges.intakeToAgent1.scope).toBe("ticket.read");
+    expect(s.edges.svcToAgent1.scope).toBe("ticket.read");
     expect(s.edges.agent2ToJira.scope).toBe("ticket.write");
   });
 

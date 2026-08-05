@@ -23,9 +23,10 @@ export type FlowPath = "none" | "normal" | "violation";
 
 export interface AgentFlowState {
   path: FlowPath;
-  nodes: { intake: FlowStatus; agent1: FlowStatus; agent2: FlowStatus; jira: FlowStatus };
+  nodes: { inbound: FlowStatus; svc: FlowStatus; agent1: FlowStatus; agent2: FlowStatus; jira: FlowStatus };
   edges: {
-    intakeToAgent1: FlowEdgeState;  // bootstrap, ticket.read
+    inboundToSvc: FlowEdgeState;    // the trigger reaching the service, no token yet
+    svcToAgent1: FlowEdgeState;     // bootstrap, ticket.read minted for Agent 1
     agent1ToAgent2: FlowEdgeState;  // delegation, act chain starts here
     agent2ToJira: FlowEdgeState;    // the write
   };
@@ -85,13 +86,15 @@ export function deriveAgentFlowState(events: ActivityEvent[]): AgentFlowState {
     : (inbound || readGrant) ? "normal" : "none";
 
   const nodes = {
-    intake: foldStatus([inbound]),
+    inbound: foldStatus([inbound]),
+    svc: foldStatus([readGrant]),
     agent1: foldStatus([readGrant, jiraRead, classify]),
     agent2: foldStatus([writeGrant, draft, jiraWrite]),
     jira: foldStatus([jiraWrite]),
   };
   const edges = {
-    intakeToAgent1: edgeFrom(readGrant),
+    inboundToSvc: edgeFrom(inbound),
+    svcToAgent1: edgeFrom(readGrant),
     agent1ToAgent2: edgeFrom(delegate),
     agent2ToJira: edgeFrom(jiraWrite),
   };
@@ -117,11 +120,13 @@ export function deriveAgentFlowState(events: ActivityEvent[]): AgentFlowState {
   return {
     ...base,
     nodes: {
-      intake: forceError(nodes.intake), agent1: forceError(nodes.agent1),
-      agent2: forceError(nodes.agent2), jira: forceError(nodes.jira),
+      inbound: forceError(nodes.inbound), svc: forceError(nodes.svc),
+      agent1: forceError(nodes.agent1), agent2: forceError(nodes.agent2),
+      jira: forceError(nodes.jira),
     },
     edges: {
-      intakeToAgent1: { ...edges.intakeToAgent1, status: forceError(edges.intakeToAgent1.status) },
+      inboundToSvc: { ...edges.inboundToSvc, status: forceError(edges.inboundToSvc.status) },
+      svcToAgent1: { ...edges.svcToAgent1, status: forceError(edges.svcToAgent1.status) },
       agent1ToAgent2: { ...edges.agent1ToAgent2, status: forceError(edges.agent1ToAgent2.status) },
       agent2ToJira: { ...edges.agent2ToJira, status: forceError(edges.agent2ToJira.status) },
     },

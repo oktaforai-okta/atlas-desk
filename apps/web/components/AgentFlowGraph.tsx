@@ -22,31 +22,36 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { motion, useReducedMotion } from "framer-motion";
-import { Inbox, Bot, SquareKanban, ShieldCheck, KeyRound, ShieldOff } from "lucide-react";
+import { Inbox, Server, Bot, SquareKanban, ShieldCheck, KeyRound, ShieldOff } from "lucide-react";
 import { linkHorizontal, linkVertical, type DefaultLinkObject } from "d3-shape";
 import { deriveAgentFlowState, type FlowStatus } from "@/lib/agentFlow";
 import { latestByStep, type ActivityEvent } from "@/lib/events";
 import { useResolvedTheme, vizPalette, withAlpha, type VizPalette } from "@/lib/theme";
 
-// ---- fixed geometry (viewBox 0 0 1200 360) ----
+// ---- fixed geometry (viewBox 0 0 1360 360) ----
 const LANE = 188;
-const NW = 196;
+const NW = 190;
 const NH = 84;
-type NodeKey = "intake" | "agent1" | "agent2" | "jira" | "okta" | "vault" | "denied";
-type Hue = keyof Pick<VizPalette, "neutral" | "triage" | "fulfill" | "okta" | "vault" | "bad">;
+type NodeKey = "inbound" | "svc" | "agent1" | "agent2" | "jira" | "okta" | "vault" | "denied";
+type Hue = keyof Pick<VizPalette, "neutral" | "service" | "triage" | "fulfill" | "okta" | "vault" | "bad">;
 
-/** Geometry and identity are fixed; the actual colour is resolved per theme. */
+/** Geometry and identity are fixed; the actual colour is resolved per theme.
+ *  The lane mirrors the Architecture fabric exactly: an inbound event (the
+ *  trigger) reaches the Intake Service (a service client, the machine root),
+ *  which mints Agent 1's read token. Two agents act; the Intake Service is not
+ *  one of them. */
 const NODES: Record<NodeKey, {
   cx: number; cy: number; w: number; h: number; hue: Hue;
   name: string; kind: string; Icon: typeof Bot;
 }> = {
-  intake: { cx: 108, cy: LANE, w: NW, h: NH, hue: "neutral", name: "Intake", kind: "inbound event", Icon: Inbox },
-  agent1: { cx: 392, cy: LANE, w: NW, h: NH, hue: "triage", name: "Triage Agent", kind: "read only", Icon: Bot },
-  agent2: { cx: 706, cy: LANE, w: NW, h: NH, hue: "fulfill", name: "Resolution Agent", kind: "write capable", Icon: Bot },
-  jira: { cx: 1010, cy: LANE, w: NW, h: NH, hue: "neutral", name: "Jira", kind: "IT Service Desk", Icon: SquareKanban },
-  okta: { cx: 549, cy: 52, w: 196, h: 54, hue: "okta", name: "Okta", kind: "brokers the hand-off", Icon: ShieldCheck },
-  vault: { cx: 880, cy: 316, w: 168, h: 52, hue: "vault", name: "OPA Vault", kind: "vaulted secret", Icon: KeyRound },
-  denied: { cx: 392, cy: 316, w: 196, h: 52, hue: "bad", name: "write refused", kind: "by Okta policy", Icon: ShieldOff },
+  inbound: { cx: 105, cy: LANE, w: NW, h: NH, hue: "neutral", name: "Inbound", kind: "external event", Icon: Inbox },
+  svc: { cx: 375, cy: LANE, w: NW, h: NH, hue: "service", name: "Intake Service", kind: "service client", Icon: Server },
+  agent1: { cx: 645, cy: LANE, w: NW, h: NH, hue: "triage", name: "Triage Agent", kind: "read only", Icon: Bot },
+  agent2: { cx: 915, cy: LANE, w: NW, h: NH, hue: "fulfill", name: "Resolution Agent", kind: "write capable", Icon: Bot },
+  jira: { cx: 1185, cy: LANE, w: NW, h: NH, hue: "neutral", name: "Jira", kind: "IT Service Desk", Icon: SquareKanban },
+  okta: { cx: 780, cy: 52, w: 196, h: 54, hue: "okta", name: "Okta", kind: "brokers the hand-off", Icon: ShieldCheck },
+  vault: { cx: 915, cy: 316, w: 176, h: 52, hue: "vault", name: "OPA Vault", kind: "vaulted secret", Icon: KeyRound },
+  denied: { cx: 645, cy: 316, w: 196, h: 52, hue: "bad", name: "write refused", kind: "by Okta policy", Icon: ShieldOff },
 };
 
 const H = linkHorizontal();
@@ -54,10 +59,11 @@ const V = linkVertical();
 const linkPath = (gen: typeof H, s: [number, number], t: [number, number]) =>
   gen({ source: s, target: t } as unknown as DefaultLinkObject) ?? "";
 const N = NODES;
-const EDGE_INTAKE = linkPath(H, [N.intake.cx + NW / 2, LANE], [N.agent1.cx - NW / 2, LANE]);
+const EDGE_INBOUND = linkPath(H, [N.inbound.cx + NW / 2, LANE], [N.svc.cx - NW / 2, LANE]);
+const EDGE_READ = linkPath(H, [N.svc.cx + NW / 2, LANE], [N.agent1.cx - NW / 2, LANE]);
 const EDGE_DELEGATE = linkPath(H, [N.agent1.cx + NW / 2, LANE], [N.agent2.cx - NW / 2, LANE]);
 const EDGE_JIRA = linkPath(H, [N.agent2.cx + NW / 2, LANE], [N.jira.cx - NW / 2, LANE]);
-const EDGE_VAULT = linkPath(V, [N.vault.cx, N.vault.cy - N.vault.h / 2], [N.agent2.cx + 40, LANE + NH / 2]);
+const EDGE_VAULT = linkPath(V, [N.vault.cx, N.vault.cy - N.vault.h / 2], [N.agent2.cx, LANE + NH / 2]);
 // the refused branch: straight down out of Agent 1, going nowhere
 const EDGE_DENIED = linkPath(V, [N.agent1.cx, LANE + NH / 2], [N.denied.cx, N.denied.cy - N.denied.h / 2]);
 // Okta drops a dotted connector into the delegation hop's midpoint.
@@ -252,7 +258,8 @@ export default function AgentFlowGraph({ events }: { events: ActivityEvent[] }) 
     const run = (s: FlowStatus) => s === "running";
     const reads = state.readCount;
     return {
-      intake: state.nodes.intake === "ok" ? "received" : null,
+      inbound: state.nodes.inbound === "ok" ? "received" : null,
+      svc: run(state.nodes.svc) ? "minting…" : state.nodes.svc === "ok" ? "read token minted" : null,
       agent1: run(state.nodes.agent1)
         ? "reading…"
         : dept
@@ -271,30 +278,33 @@ export default function AgentFlowGraph({ events }: { events: ActivityEvent[] }) 
 
   return (
     <div className={`card edge-accent hero-mesh overflow-hidden p-4 transition-shadow ${anyRunning ? "shadow-[0_0_0_1px_rgba(122,162,255,0.25),0_8px_40px_-12px_rgba(122,162,255,0.25)]" : ""}`}>
-      <svg viewBox="0 0 1200 360" className="w-full" role="img"
+      <svg viewBox="0 0 1360 360" className="w-full" role="img"
         aria-label={violation
-          ? "Blocked run. Agent 1 holds ticket.read and asked Okta for ticket.write. Okta refused, so the run stopped: Agent 2, the vault and Jira were never reached and nothing was written."
-          : "Delegation flow. Intake hands to Agent 1, which holds ticket.read. Agent 1 delegates to Agent 2, which holds ticket.write and files to Jira using a credential released from the Okta Privileged Access vault."}>
+          ? "Blocked run. The Triage Agent holds ticket.read and asked Okta for ticket.write. Okta refused, so the run stopped: the Resolution Agent, the vault and Jira were never reached and nothing was written."
+          : "Delegation flow. An inbound ticket, the trigger, reaches the Atlas Intake Service, a service client that mints the Triage Agent's ticket.read token. The Triage Agent delegates to the Resolution Agent, which holds ticket.write and files to Jira using a credential released from the Okta Privileged Access vault."}>
         <defs>
-          <Grad id="g-in" from={P.neutral} to={P.triage} x1={N.intake.cx} x2={N.agent1.cx} />
+          <Grad id="g-in" from={P.neutral} to={P.service} x1={N.inbound.cx} x2={N.svc.cx} />
+          <Grad id="g-read" from={P.service} to={P.triage} x1={N.svc.cx} x2={N.agent1.cx} />
           <Grad id="g-del" from={P.triage} to={P.fulfill} x1={N.agent1.cx} x2={N.agent2.cx} />
           <Grad id="g-jira" from={P.fulfill} to={P.neutral} x1={N.agent2.cx} x2={N.jira.cx} />
           <Grad id="g-vault" from={P.vault} to={P.fulfill} x1={N.vault.cx} x2={N.agent2.cx} />
         </defs>
 
-        <Edge d={EDGE_INTAKE} gradId="g-in" status={state.edges.intakeToAgent1.status} reduced={reduced} P={P} />
+        <Edge d={EDGE_INBOUND} gradId="g-in" status={state.edges.inboundToSvc.status} reduced={reduced} P={P} />
         {!violation && <Edge d={EDGE_VAULT} gradId="g-vault" status={state.vaultBadge} reduced={reduced} P={P} />}
+        <Edge d={EDGE_READ} gradId="g-read" status={state.edges.svcToAgent1.status} reduced={reduced} P={P} />
         <Edge d={EDGE_DELEGATE} gradId="g-del" status={delegate} reduced={reduced} P={P} />
         <Edge d={EDGE_JIRA} gradId="g-jira" status={state.edges.agent2ToJira.status} reduced={reduced} P={P} />
         {violation && <DeniedBranch d={EDGE_DENIED} active={deniedActive} reduced={reduced} P={P} />}
         <OktaConnector d={OKTA_CONN} to={OKTA_MID}
           active={delegate === "running" || delegate === "ok"} flowing={delegate === "running"} reduced={reduced} P={P} />
 
-        {/* scope labels: the CRUD story, readable without hovering anything */}
-        <text x={(N.intake.cx + N.agent1.cx) / 2} y={LANE - 16} textAnchor="middle" fontSize={11}
-          fontWeight={600} fill={state.edges.intakeToAgent1.scope ? P.resolve : P.dim}
+        {/* scope labels: the CRUD story, readable without hovering anything. The
+            read token is minted by the Intake Service for Agent 1. */}
+        <text x={(N.svc.cx + N.agent1.cx) / 2} y={LANE - 16} textAnchor="middle" fontSize={11}
+          fontWeight={600} fill={state.edges.svcToAgent1.scope ? P.resolve : P.dim}
           style={{ fontFamily: "var(--font-mono)" }}>
-          {state.edges.intakeToAgent1.scope ?? "ticket.read"}
+          {state.edges.svcToAgent1.scope ?? "ticket.read"}
         </text>
         <text x={(N.agent2.cx + N.jira.cx) / 2} y={LANE - 16} textAnchor="middle" fontSize={11}
           fontWeight={600} fill={state.edges.agent2ToJira.scope ? P.fulfill : P.dim}
@@ -312,19 +322,20 @@ export default function AgentFlowGraph({ events }: { events: ActivityEvent[] }) 
         <Node k="okta" status={delegate} label={labels.okta} hover={hoverNode} setHover={setHoverNode} P={P} />
         {!violation && <Node k="vault" status={state.vaultBadge} label={labels.vault} hover={hoverNode} setHover={setHoverNode} P={P} />}
         {violation && <Node k="denied" status={deniedActive ? "error" : "idle"} label={labels.denied} hover={hoverNode} setHover={setHoverNode} P={P} />}
-        {/* Trigger callout: name WHERE the run starts. The inbound ticket is an
-            event with no identity of its own; authority begins at the first hop,
-            which is the piece customers most often miss. */}
+        {/* Trigger callout: name WHERE the run starts. The inbound event is the
+            trigger and carries no identity; authority begins one hop later, at the
+            Intake Service. This is the piece customers most often miss. */}
         <g className="pointer-events-none">
-          <rect x={N.intake.cx - 52} y={92} width={104} height={22} rx={11}
+          <rect x={N.inbound.cx - 52} y={92} width={104} height={22} rx={11}
             fill={hexA(P.warn, 0.14)} stroke={hexA(P.warn, 0.75)} strokeWidth={1} />
-          <text x={N.intake.cx} y={104} textAnchor="middle" fontSize={10.5} fontWeight={700}
+          <text x={N.inbound.cx} y={104} textAnchor="middle" fontSize={10.5} fontWeight={700}
             fill={P.warn} dominantBaseline="middle"
             style={{ letterSpacing: "0.1em", fontFamily: "var(--font-mono)" }}>▶ TRIGGER</text>
-          <line x1={N.intake.cx} y1={114} x2={N.intake.cx} y2={LANE - NH / 2}
+          <line x1={N.inbound.cx} y1={114} x2={N.inbound.cx} y2={LANE - NH / 2}
             stroke={hexA(P.warn, 0.5)} strokeWidth={1.2} strokeDasharray="3 3" />
         </g>
-        <Node k="intake" status={state.nodes.intake} label={labels.intake} hover={hoverNode} setHover={setHoverNode} P={P} />
+        <Node k="inbound" status={state.nodes.inbound} label={labels.inbound} hover={hoverNode} setHover={setHoverNode} P={P} />
+        <Node k="svc" status={state.nodes.svc} label={labels.svc} hover={hoverNode} setHover={setHoverNode} P={P} />
         <Node k="agent1" status={state.nodes.agent1} label={labels.agent1} hover={hoverNode} setHover={setHoverNode} P={P} />
         <Node k="agent2" status={state.nodes.agent2} label={labels.agent2} hover={hoverNode} setHover={setHoverNode} P={P} />
         <Node k="jira" status={state.nodes.jira} label={labels.jira} hover={hoverNode} setHover={setHoverNode} P={P} />
@@ -335,23 +346,25 @@ export default function AgentFlowGraph({ events }: { events: ActivityEvent[] }) 
         <span className="mt-px shrink-0 font-mono font-bold tracking-wider text-warn">▶ TRIGGER</span>
         <span>
           The inbound ticket is the trigger: an <span className="text-ink">event, not an identity</span>, so it
-          carries no token or scope. Authority begins at the first hop, where the root machine identity (the
-          intake service) mints the <span className="font-mono text-resolve">ticket.read</span> token that Agent 1
-          holds. Everything after that is a signed, attributable delegation, not a shared key.
+          carries no token or scope. Authority begins one hop later, at the{" "}
+          <span className="text-ink">Intake Service</span> (a service client, the machine root), which mints the{" "}
+          <span className="font-mono text-resolve">ticket.read</span> token the Triage Agent holds. Everything
+          after that is a signed, attributable delegation, not a shared key.
         </span>
       </div>
 
-      {/* Say what the two agents are, so no one has to wonder "which agent is which,
-          and is there a third?" There are exactly two that act, split by capability. */}
+      {/* Answer the "is that three agents?" question head on: two agents act, and
+          the Intake Service is a service client, not an agent. */}
       <div className="mt-2 flex items-start gap-2 rounded-lg border border-line bg-panel px-3 py-2 text-2xs leading-snug text-soft">
         <span className="mt-px shrink-0 font-mono font-bold tracking-wider text-ink">2 AGENTS</span>
         <span>
-          Each is its own Okta workload principal, split by capability.{" "}
-          <span className="font-medium text-resolve">Agent 1, the Triage Agent</span>, can only read
-          (<span className="font-mono text-resolve">ticket.read</span>); it hands off to{" "}
-          <span className="font-medium text-fulfill">Agent 2, the Resolution Agent</span>, which can write
-          (<span className="font-mono text-fulfill">ticket.write</span>). Okta brokers the hand-off and refuses
-          any scope an agent was not granted.
+          Two AI agents act, each its own Okta workload principal:{" "}
+          <span className="font-medium text-resolve">the Triage Agent</span> can only read
+          (<span className="font-mono text-resolve">ticket.read</span>) and hands off to{" "}
+          <span className="font-medium text-fulfill">the Resolution Agent</span>, which can write
+          (<span className="font-mono text-fulfill">ticket.write</span>). The{" "}
+          <span className="text-ink">Intake Service</span> ahead of them is a service client that starts the
+          chain, not an agent. Okta brokers the hand-off and refuses any scope an agent was not granted.
         </span>
       </div>
 
