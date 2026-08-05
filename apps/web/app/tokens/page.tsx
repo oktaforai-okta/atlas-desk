@@ -9,7 +9,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { KeyRound, Info, ArrowLeft, ShieldCheck } from "lucide-react";
+import { KeyRound, Info, ArrowLeft, ShieldCheck, History } from "lucide-react";
 import TokenCard from "@/components/TokenCard";
 import { buildChain, illustrativeChain, isIllustrative, type ChainStep } from "@/lib/chain";
 import { readCapturedRun, fetchLastRun } from "@/lib/events";
@@ -100,16 +100,33 @@ export default function TokensPage() {
           </div>
         </div>
       ) : (
-        <div className="mt-5 flex items-start gap-2 rounded-lg border border-ok/30 bg-ok/[0.06] px-3.5 py-3 text-[13px] text-ok">
-          <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0" />
-          <div>
-            Real Okta-issued tokens, signed <span className="font-mono">RS256</span>
-            {source === "this-run"
-              ? ", captured from the run you just watched"
-              : ", from the most recent run against this orchestrator"}
-            {ago ? ` (${ago})` : ""}. Paste any of them into jwt.io to check them yourself.
+        source === "this-run" ? (
+          <div className="mt-5 flex items-start gap-2 rounded-lg border border-ok/30 bg-ok/[0.06] px-3.5 py-3 text-[13px] text-ok">
+            <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0" />
+            <div>
+              Real Okta-issued tokens, signed <span className="font-mono">RS256</span>, captured
+              from the run you just watched{ago ? ` (${ago})` : ""}.
+            </div>
           </div>
-        </div>
+        ) : (
+          /* Somebody else's run. Saying so plainly matters: a viewer who lands here
+             without having clicked anything reasonably wonders where these came
+             from, and "is this even real" is exactly the doubt this page exists to
+             remove. */
+          <div className="mt-5 flex items-start gap-2 rounded-lg border border-accent/30 bg-accent/[0.06] px-3.5 py-3 text-[13px] text-accent">
+            <History className="mt-0.5 h-4 w-4 shrink-0" />
+            <div>
+              <span className="font-semibold">This is not your run.</span> These are real
+              Okta-issued tokens, signed <span className="font-mono">RS256</span>, from the
+              last time anyone ran this demo{ago ? `, ${ago}` : ""}. They are shown so a
+              shared link is never empty.{" "}
+              <Link href="/" className="underline hover:opacity-80">
+                Run your own
+              </Link>{" "}
+              to watch the pipeline produce a fresh set.
+            </div>
+          </div>
+        )
       )}
 
       <div className="mt-6 space-y-3">

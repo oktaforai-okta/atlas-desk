@@ -260,3 +260,52 @@ describe("formatClaims", () => {
     expect(JSON.parse(formatClaims({ act })).act).toEqual(act);
   });
 });
+
+// --- expired grants keep their card ---
+//
+// ID-JAGs live 5 minutes while access tokens live an hour, so a run fifteen
+// minutes old legitimately has live access tokens and dead grants. Dropping the
+// grant's card entirely broke the narrative and left the next card's copy
+// referring to "the grant above", which was no longer rendered.
+
+describe("buildChain with lapsed grants", () => {
+  const fifteenMinutesOn = (): ActivityEvent[] => [
+    ev({ step: "read_grant", raw_tokens: { t1: signed() }, data: { scope: READ } }),
+    // the orchestrator withheld idjag1 and said so
+    { ...ev({ step: "a2a_delegate", raw_tokens: { t_res: signed() },
+              data: { scope: READ, caller: "wlpONE", callee: "wlpTWO" } }),
+      expired_tokens: ["idjag1"] } as ActivityEvent,
+    { ...ev({ step: "write_grant", raw_tokens: { t_ful: signed() },
+              data: { scope: WRITE, caller: "wlpTWO" } }),
+      expired_tokens: ["idjag2"] } as ActivityEvent,
+  ];
+
+  it("still renders a card for the lapsed grant", () => {
+    const c = buildChain(fifteenMinutesOn());
+    expect(c.map((x) => x.kind)).toEqual([
+      "Access Token", "Expired", "Access Token", "Expired", "Access Token",
+    ]);
+  });
+
+  it("marks it expired and carries no token to copy", () => {
+    const grant = buildChain(fifteenMinutesOn()).find((x) => x.kind === "Expired")!;
+    expect(grant.expired).toBe(true);
+    expect(grant.token).toBeUndefined();
+  });
+
+  it("keeps the hop identity so the chain still reads end to end", () => {
+    const grant = buildChain(fifteenMinutesOn()).find((x) => x.kind === "Expired")!;
+    expect(grant.title).toBe("Agent 1 → Agent 2");
+    expect(grant.scope).toBe(READ);
+  });
+
+  it("does not treat a run with lapsed grants as illustrative", () => {
+    // the surviving access tokens are real and RS256; the banner must not claim
+    // the whole page is examples just because the grants aged out
+    expect(isIllustrative(buildChain(fifteenMinutesOn()))).toBe(false);
+  });
+
+  it("renders no expired card when nothing lapsed", () => {
+    expect(buildChain(fullRun()).some((x) => x.kind === "Expired")).toBe(false);
+  });
+});

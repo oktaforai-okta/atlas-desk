@@ -11,7 +11,7 @@
 
 import { type ActivityEvent, latestByStep } from "./events";
 
-export type StepKind = "Access Token" | "ID-JAG" | "Denied";
+export type StepKind = "Access Token" | "ID-JAG" | "Denied" | "Expired";
 
 export interface ChainStep {
   n: number;
@@ -29,6 +29,10 @@ export interface ChainStep {
   callee?: string;
   /** compact JWT, if this step has one */
   token?: string;
+  /** true when this credential existed but has since lapsed and is withheld.
+   *  The card still renders, because the step happened and the surrounding copy
+   *  refers to it; only the token value is gone. */
+  expired?: boolean;
   /** populated only for the denied step */
   denial?: {
     httpStatus?: number;
@@ -40,6 +44,11 @@ export interface ChainStep {
 
 const s = (v: unknown): string | undefined =>
   typeof v === "string" && v ? v : undefined;
+
+/** Did the orchestrator withhold this token because it lapsed? */
+const lapsed = (e: ActivityEvent | undefined, key: string): boolean =>
+  Array.isArray((e as { expired_tokens?: unknown } | undefined)?.expired_tokens)
+  && ((e as unknown as { expired_tokens: string[] }).expired_tokens).includes(key);
 
 /**
  * Deep link that pre-loads the token into jwt.io.
@@ -171,52 +180,54 @@ export function buildChain(events: ActivityEvent[]): ChainStep[] {
   }
 
   const delegate = by.get("a2a_delegate");
-  if (delegate?.raw_tokens) {
+  if (delegate && (delegate.raw_tokens || lapsed(delegate, "idjag1"))) {
     const d = delegate.data ?? {};
     const scope = s(d.scope);
-    if (delegate.raw_tokens.idjag1) {
+    if (delegate.raw_tokens?.idjag1 || lapsed(delegate, "idjag1")) {
       out.push({
         title: "Agent 1 → Agent 2",
-        kind: "ID-JAG",
+        kind: delegate.raw_tokens?.idjag1 ? "ID-JAG" : "Expired",
+        expired: !delegate.raw_tokens?.idjag1,
         purpose:
           "The delegation grant. Agent 1 cannot write, so it hands the work onward; this is the credential that carries that hand-off.",
         scope,
         caller: s(d.caller) ?? "Agent 1",
         callee: s(d.callee) ?? "Agent 2",
-        token: delegate.raw_tokens.idjag1,
+        token: delegate.raw_tokens?.idjag1,
       });
     }
-    if (delegate.raw_tokens.t_res) {
+    if (delegate.raw_tokens?.t_res) {
       out.push({
         title: "Agent 1 → Agent 2",
         kind: "Access Token",
         purpose:
-          "Redeemed from the grant above. Its act claim names Agent 1, so whatever happens next stays attributable to it.",
+          "Redeemed from that grant. Its act claim names Agent 1, so whatever happens next stays attributable to it.",
         scope,
         caller: s(d.caller) ?? "Agent 1",
         callee: s(d.callee) ?? "Agent 2",
-        token: delegate.raw_tokens.t_res,
+        token: delegate.raw_tokens?.t_res,
       });
     }
   }
 
   const writeGrant = by.get("write_grant");
-  if (writeGrant?.raw_tokens) {
+  if (writeGrant && (writeGrant.raw_tokens || lapsed(writeGrant, "idjag2"))) {
     const d = writeGrant.data ?? {};
     const scope = s(d.scope);
-    if (writeGrant.raw_tokens.idjag2) {
+    if (writeGrant.raw_tokens?.idjag2 || lapsed(writeGrant, "idjag2")) {
       out.push({
         title: "Agent 2 → write lane",
-        kind: "ID-JAG",
+        kind: writeGrant.raw_tokens?.idjag2 ? "ID-JAG" : "Expired",
+        expired: !writeGrant.raw_tokens?.idjag2,
         purpose:
           "The grant for the capability change. Only Agent 2 is an authorized client on the write authorization server.",
         scope,
         caller: s(d.caller) ?? "Agent 2",
         callee: "write authorization server",
-        token: writeGrant.raw_tokens.idjag2,
+        token: writeGrant.raw_tokens?.idjag2,
       });
     }
-    if (writeGrant.raw_tokens.t_ful) {
+    if (writeGrant.raw_tokens?.t_ful) {
       out.push({
         title: "Agent 2 → Jira",
         kind: "Access Token",
@@ -225,7 +236,7 @@ export function buildChain(events: ActivityEvent[]): ChainStep[] {
         scope,
         caller: s(d.caller) ?? "Agent 2",
         callee: "Jira",
-        token: writeGrant.raw_tokens.t_ful,
+        token: writeGrant.raw_tokens?.t_ful,
       });
     }
   }
@@ -328,7 +339,7 @@ export function illustrativeChain(): ChainStep[] {
       title: "Agent 1 → Agent 2",
       kind: "Access Token",
       purpose:
-        "Redeemed from the grant above. Its act claim names Agent 1, so whatever happens next stays attributable to it.",
+        "Redeemed from that grant. Its act claim names Agent 1, so whatever happens next stays attributable to it.",
       scope: READ,
       caller: EX.a1,
       callee: EX.a2,

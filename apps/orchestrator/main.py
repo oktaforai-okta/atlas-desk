@@ -223,15 +223,25 @@ _LAST_RUN: dict = {"events": [], "captured_at": None, "mode": None, "path": None
 
 
 def _unexpired(events: list[dict]) -> list[dict]:
-    """Drop tokens whose exp has passed, and any event left with none.
+    """Withhold expired token VALUES while keeping the step they belonged to.
 
-    Without this the endpoint becomes a standing archive: it would keep serving a
-    run's credentials long after they died, which is both useless (an expired token
-    proves nothing) and a needlessly wide exposure window. Filtering on the token's
-    own exp makes the published lifetime equal the credential's real lifetime.
+    Two requirements pull against each other here.
 
-    Claims are read without verification purely to find exp. A forged exp here would
-    only cause us to withhold a token, so there is nothing to gain by lying to us.
+    The exposure window should equal the credential's own lifetime, so a dead token
+    must not keep being served: it proves nothing and only widens the window.
+
+    But the step still happened, and dropping it silently breaks the narrative.
+    ID-JAGs live 5 minutes while access tokens live an hour, so a quarter-hour-old
+    run would lose exactly the two delegation grants, which are the most important
+    credentials in the chain. Worse, the surviving card's own copy refers to "the
+    grant above", leaving a dangling reference to something no longer rendered.
+
+    So the event survives with `expired_tokens` naming what was withheld, and the
+    UI renders those as expired rather than pretending they never existed. That
+    turns the gap into the point: ID-JAGs are deliberately short-lived.
+
+    Claims are read without verification purely to find exp. A forged exp would only
+    cause us to withhold a token, so there is nothing to gain by lying to us.
     """
     now = time.time()
 
@@ -246,11 +256,14 @@ def _unexpired(events: list[dict]) -> list[dict]:
 
     out = []
     for e in events:
-        toks = {k: v for k, v in (e.get("raw_tokens") or {}).items() if alive(v)}
-        # the denial step carries no token and stays as long as the run is current
-        if not toks and e.get("step") != "write_denied":
+        raw = e.get("raw_tokens") or {}
+        live = {k: v for k, v in raw.items() if alive(v)}
+        dead = sorted(set(raw) - set(live))
+        # a step with no credential at all (the refusal) still belongs in the chain
+        if not raw and e.get("step") != "write_denied":
             continue
-        out.append({**e, "raw_tokens": toks or None})
+        out.append({**e, "raw_tokens": live or None,
+                    **({"expired_tokens": dead} if dead else {})})
     return out
 
 
@@ -262,6 +275,9 @@ async def last_run():
     examples rather than presenting dead tokens as live ones.
     """
     events = _unexpired(_LAST_RUN.get("events") or [])
+    # stale means no live credential remains at all. A run whose short-lived
+    # ID-JAGs have lapsed but whose access tokens are current is still worth
+    # serving, with the lapsed ones marked.
     if not any(e.get("raw_tokens") for e in events):
         return JSONResponse({"events": [], "captured_at": None,
                              "mode": _LAST_RUN.get("mode"), "expired": True})
