@@ -5,12 +5,16 @@
 //   • d3-force lays it out organically (charge + links + per-column forceX lanes)
 //   • d3-zoom: scroll to zoom, drag background to pan, "Fit" to reset
 //   • drag any node (d3.pointer stays accurate under zoom); the sim reflows
-//   • hover a node to spotlight its connections + reveal its Okta id
+//   • hover or tap a node to spotlight its connections AND open its Okta identity
+//     in the side panel (name, id, scope, lane, connection, admin-console link)
 //   • "Replay delegation" sends a token down the real path: service → 2 agents → Jira
-// Each node mirrors an object in the reference tenant, but the ids shown below are
-// EXAMPLE placeholders, not live values: this diagram is static, so it cannot know
-// a real tenant's ids. Real ids appear on /tokens, read off actual tokens.
-// Okta itself isn't a node, it's the issuer that brokers the agent→agent hop,
+//
+// Every node is a REAL object in the reference tenant, and it says so: the card
+// shows the object's real Okta name (e.g. "Atlas Triage Agent"), and the panel
+// connects it the rest of the way, the workload-principal / app / secret id, the
+// authorization-server lane, the scope condition on the connection, and a link
+// straight into the Okta admin console. The mapping lives in lib/oktaIdentities.ts.
+// Okta itself isn't a node; it's the issuer that brokers the agent→agent hop,
 // shown as the id-jag shield on that edge (exactly where the token is minted).
 
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
@@ -19,17 +23,17 @@ import {
   zoom as d3zoom, zoomIdentity, select, pointer,
   type Simulation, type ZoomTransform, type ZoomBehavior,
 } from "d3";
-import { useResolvedTheme, vizPalette } from "@/lib/theme";
+import { ExternalLink, X } from "lucide-react";
+import { useResolvedTheme, vizPalette, withAlpha } from "@/lib/theme";
+import { identityFor } from "@/lib/oktaIdentities";
 
 type NType = "external" | "service" | "agent" | "resource";
 type IconName = "inbox" | "server" | "bot" | "lock" | "kanban";
 interface FNode {
-  id: string; label: string; icon: IconName; type: NType; hue: Hue;
-  role: string; idKind?: string; idVal?: string; // role shown in-card; real id (WLP/APP) revealed OUTSIDE on hover/replay
-  realName?: string; // for AI agents: the real name (Triage/Resolution/Fulfillment), revealed alongside the id
+  id: string; icon: IconName; type: NType; hue: Hue;
   tx: number; ty: number; x: number; y: number; fx?: number | null; fy?: number | null;
 }
-interface FLink { source: string | FNode; target: string | FNode; brokered?: boolean; kind?: "branch" }
+interface FLink { source: string | FNode; target: string | FNode; brokered?: boolean; kind?: "branch"; scope?: string }
 
 type Hue = "external" | "service" | "okta" | "triage" | "resolve" | "fulfill" | "resource";
 const HUES: Hue[] = ["external", "service", "okta", "triage", "resolve", "fulfill", "resource"];
@@ -44,37 +48,46 @@ function hues(P: ReturnType<typeof vizPalette>): Record<Hue, string> {
   };
 }
 
-// A left-to-right delegation pipeline; the vault hangs directly BELOW Fulfillment
+// A left-to-right delegation pipeline; the vault hangs directly BELOW Agent 2
 // (the only agent trusted to pull the prod credential) as a governance side-branch.
-// No Okta/owner nodes, Okta lives on the id-jag edges. Cards stay clean (generic
-// "Agent N" + role, on purpose, see below); each identity node's REAL Okta id
-// (WLP ID for agents, APP ID for the service client) is revealed OUTSIDE the card
-// on hover, or as the replay dot passes. Every id here is a live principal in the
-// deployed tenant.
+// Geometry + icon + hue only, every label, id, and Okta fact comes from
+// lib/oktaIdentities.ts, so the diagram and the tenant never drift apart.
 //
-// Two agents, distinguished by what they may do rather than by a role name.
-// Agent 1 holds ticket.read; Agent 2 is the only client authorized on the write
-// authorization server, so it is the only one that can hold ticket.write.
+// Two agents, distinguished by what they may do. Agent 1 holds ticket.read;
+// Agent 2 is the only client authorized on the write authorization server, so it
+// is the only one that can hold ticket.write. Lanes are spaced wide enough that no
+// card ever touches another and the arrowheads have room to land.
 const RAW_NODES: Omit<FNode, "x" | "y">[] = [
-  { id: "inbound", label: "Inbound Tickets", role: "external system", icon: "inbox", type: "external", hue: "external", tx: 150, ty: 180 },
-  { id: "svc", label: "Intake Service", role: "service client", idKind: "APP ID", idVal: "0oaEXAMPLEIntakeSvc1", icon: "server", type: "service", hue: "service", tx: 410, ty: 180 },
-  { id: "triage", label: "Agent 1", role: "read only", realName: "reader", idVal: "wlpEXAMPLEAgentOne01", icon: "bot", type: "agent", hue: "triage", tx: 700, ty: 180 },
-  { id: "fulfill", label: "Agent 2", role: "write capable", realName: "writer", idVal: "wlpEXAMPLEAgentTwo01", icon: "bot", type: "agent", hue: "fulfill", tx: 1010, ty: 180 },
-  { id: "jira", label: "Jira · ITSD", role: "IT Service Desk", icon: "kanban", type: "external", hue: "external", tx: 1320, ty: 180 },
-  { id: "vault", label: "OPA Vault", role: "vaulted secret", icon: "lock", type: "resource", hue: "resource", tx: 1010, ty: 445 },
+  { id: "inbound", icon: "inbox", type: "external", hue: "external", tx: 150, ty: 180 },
+  { id: "svc", icon: "server", type: "service", hue: "service", tx: 470, ty: 180 },
+  { id: "triage", icon: "bot", type: "agent", hue: "triage", tx: 790, ty: 180 },
+  { id: "fulfill", icon: "bot", type: "agent", hue: "fulfill", tx: 1110, ty: 180 },
+  { id: "jira", icon: "kanban", type: "external", hue: "external", tx: 1430, ty: 180 },
+  { id: "vault", icon: "lock", type: "resource", hue: "resource", tx: 1110, ty: 445 },
 ];
 const RAW_LINKS: FLink[] = [
   { source: "inbound", target: "svc" },
-  { source: "svc", target: "triage" },
+  { source: "svc", target: "triage", scope: "ticket.read" },
   { source: "triage", target: "fulfill", brokered: true },
   { source: "fulfill", target: "vault", kind: "branch" },
-  { source: "fulfill", target: "jira" },
+  { source: "fulfill", target: "jira", scope: "ticket.write" },
 ];
-// Replay dips into the OPA Vault (Fulfillment fetching the Jira credential) and
-// back up before filing to Jira — so the credential pull is actually shown.
+// Replay dips into the OPA Vault (Agent 2 fetching the Jira credential) and back
+// up before filing to Jira, so the credential pull is actually shown.
 const REPLAY = ["inbound", "svc", "triage", "fulfill", "vault", "fulfill", "jira"];
 
-const NW = 186, NH = 62; // node card size — tighter (less empty space; wider gaps = bolder arrows)
+const NW = 224, NH = 66; // node card size, wide enough to hold a real Okta name
+const CHIP_CX = -NW / 2 + 30;      // icon chip centre
+const TEXT_X = CHIP_CX + 30;       // where the label text begins
+const TEXT_MAXW = NW / 2 - 12 - TEXT_X; // usable text width, right pad = 12
+
+/** SVG-text props that GUARANTEE the label stays inside its card: if the string
+ *  is wider than the box, compress it to fit (spacingAndGlyphs) rather than let it
+ *  spill past the border; short strings render naturally. */
+function fit(text: string, fontSize: number): { textLength?: number; lengthAdjust?: "spacingAndGlyphs" } {
+  const approx = text.length * fontSize * 0.56;
+  return approx > TEXT_MAXW ? { textLength: TEXT_MAXW, lengthAdjust: "spacingAndGlyphs" } : {};
+}
 
 // lucide-style 24×24 stroke glyphs, drawn in the node color.
 function glyph(name: IconName): ReactNode {
@@ -106,6 +119,7 @@ export default function AtlasFabric() {
   const [, tick] = useState(0);
   const [transform, setTransform] = useState<ZoomTransform>(zoomIdentity);
   const [hovered, setHovered] = useState<string | null>(null);
+  const [selected, setSelected] = useState<string | null>(null);
   const [token, setToken] = useState<{ x: number; y: number } | null>(null);
   const P = vizPalette(useResolvedTheme());
   const H = hues(P);
@@ -113,11 +127,11 @@ export default function AtlasFabric() {
   useEffect(() => {
     const nodes = nodesRef.current, links = linksRef.current;
     const sim = forceSimulation<FNode>(nodes)
-      .force("link", forceLink<FNode, FLink>(links).id((d) => d.id).distance(260).strength(0.55))
-      .force("charge", forceManyBody().strength(-1100))
-      .force("x", forceX<FNode>((d) => d.tx).strength(0.44))
+      .force("link", forceLink<FNode, FLink>(links).id((d) => d.id).distance(280).strength(0.55))
+      .force("charge", forceManyBody().strength(-1200))
+      .force("x", forceX<FNode>((d) => d.tx).strength(0.46))
       .force("y", forceY<FNode>((d) => d.ty).strength(0.28))
-      .force("collide", forceCollide(120))
+      .force("collide", forceCollide(130))
       .on("tick", () => tick((v) => v + 1));
     simRef.current = sim;
 
@@ -132,6 +146,7 @@ export default function AtlasFabric() {
 
   function onNodeDown(id: string) {
     dragId.current = id;
+    setSelected(id); // a tap pins this node's Okta identity in the panel
     simRef.current?.alphaTarget(0.3).restart();
     const move = (ev: PointerEvent) => {
       const n = nodesRef.current.find((x) => x.id === dragId.current);
@@ -157,7 +172,7 @@ export default function AtlasFabric() {
     };
   }
 
-  function fit() {
+  function fit_() {
     if (!zoomRef.current) return;
     select(svgRef.current!).transition().duration(400).call(zoomRef.current.transform, zoomIdentity);
   }
@@ -167,7 +182,7 @@ export default function AtlasFabric() {
     const pts = REPLAY.map((id) => byId.get(id)).filter((n): n is FNode => !!n);
     if (pts.length < 2) return;
     cancelAnimationFrame(rafRef.current); // a second click restarts, never races
-    const segMs = 1000; // slower, more deliberate flow (was 600) — easier to follow + pills dwell longer
+    const segMs = 1000; // slower, more deliberate flow, easier to follow
     const start = performance.now();
     const stepFn = (now: number) => {
       const t = (now - start) / segMs;
@@ -196,24 +211,33 @@ export default function AtlasFabric() {
     return set;
   }, [hovered, links, byId]);
 
-  // While the replay dot travels, light up the id pill of whichever node it's passing.
+  // While the replay dot travels, note whichever node it is passing so the panel
+  // can narrate the hop.
   let passingId: string | null = null;
   if (token) {
-    let best = 118; // generous radius so each pill lights well before + lingers after the dot passes
+    let best = 118; // generous radius so a node lights well before + lingers after the dot passes
     for (const n of nodes) {
       const d = Math.hypot(n.x - token.x, n.y - token.y);
       if (d < best) { best = d; passingId = n.id; }
     }
   }
 
+  // What the detail panel shows: live hover wins, then the replay dot's node,
+  // then the pinned selection. So you can pin a node and still move the mouse to
+  // click its "View in Okta" link.
+  const panelId = hovered ?? (token ? passingId : null) ?? selected;
+  const panelNode = panelId ? byId.get(panelId) : undefined;
+  const ident = panelId ? identityFor(panelId) : null;
+  const panelHue = panelNode ? H[panelNode.hue] : P.okta;
+
   return (
     <div className="card edge-accent hero-mesh relative overflow-hidden">
       <div className="pointer-events-none absolute left-4 top-3 z-10 text-2xs uppercase tracking-wider text-mute">
-        Identity Fabric · scroll to zoom · drag nodes · hover to trace
+        Identity Fabric · scroll to zoom · drag nodes · tap a node for its Okta identity
       </div>
       <div className="absolute right-3 top-3 z-10 flex gap-2">
         <button onClick={replay} className="rounded-md bg-gradient-to-b from-accent to-[#5B86E8] px-2.5 py-1 text-2xs font-medium text-white shadow-[0_2px_10px_-2px_rgba(122,162,255,0.5)] hover:brightness-110">▷ Replay delegation</button>
-        <button onClick={fit} className="rounded-md border border-line bg-raised px-2.5 py-1 text-2xs text-soft hover:text-ink">Fit</button>
+        <button onClick={fit_} className="rounded-md border border-line bg-raised px-2.5 py-1 text-2xs text-soft hover:text-ink">Fit</button>
       </div>
 
       <svg ref={svgRef} viewBox="0 0 1600 540" className="h-[540px] w-full cursor-grab active:cursor-grabbing">
@@ -237,8 +261,8 @@ export default function AtlasFabric() {
             if (!a || !b) return null;
             const active = !neighbors || (neighbors.has(a.id) && neighbors.has(b.id));
             // OPA Vault "credential pull": a smooth vertical cubic-bezier drop from
-            // Fulfillment's bottom-center into the Vault's top-center — an intentional
-            // governance side-branch, not the stray diagonal arrow it used to be.
+            // Agent 2's bottom-center into the Vault's top-center, an intentional
+            // governance side-branch, not a stray diagonal arrow.
             if (l.kind === "branch") {
               const x1 = a.x, y1 = a.y + NH / 2, x2 = b.x, y2 = b.y - NH / 2;
               const cy = (y1 + y2) / 2;
@@ -257,10 +281,22 @@ export default function AtlasFabric() {
             const ux = vx / len, uy = vy / len;
             const edgeDist = Math.min(vx ? (NW / 2) / Math.abs(vx) : Infinity, vy ? (NH / 2) / Math.abs(vy) : Infinity) * len;
             const off = Math.min(edgeDist + 7, len * 0.45); // clamp so short edges never cross
+            const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+            const scopeColor = l.scope === "ticket.write" ? H.fulfill : H.resolve;
             return (
-              <line key={i} x1={a.x + ux * off} y1={a.y + uy * off} x2={b.x - ux * off} y2={b.y - uy * off}
-                stroke={H[b.hue]} strokeOpacity={active ? 0.85 : 0.12}
-                strokeWidth={2.4} markerEnd={`url(#${uid}-arw-${b.hue})`} />
+              <g key={i}>
+                <line x1={a.x + ux * off} y1={a.y + uy * off} x2={b.x - ux * off} y2={b.y - uy * off}
+                  stroke={H[b.hue]} strokeOpacity={active ? 0.85 : 0.12}
+                  strokeWidth={2.4} markerEnd={`url(#${uid}-arw-${b.hue})`} />
+                {/* scope carried on this hop, the CRUD story, readable at a glance.
+                    Sits in the gap between two cards, well clear of both. */}
+                {l.scope && (
+                  <text x={mx} y={my - 13} textAnchor="middle" fontSize={11} fontWeight={600}
+                    fill={active ? scopeColor : P.dim} style={{ fontFamily: "var(--font-mono)", opacity: active ? 1 : 0.5 }}>
+                    {l.scope}
+                  </text>
+                )}
+              </g>
             );
           })}
           {/* id-jag broker badges, sit on the agent→agent hops, where Okta mints the token */}
@@ -272,7 +308,7 @@ export default function AtlasFabric() {
             return (
               <g key={`bk-${i}`} style={{ opacity: active ? 1 : 0.12 }} className="pointer-events-none">
                 <circle cx={mx} cy={my} r={16} fill={P.canvas} stroke={P.okta} strokeWidth={1.4}
-                  style={{ filter: `drop-shadow(0 0 6px ${P.okta}66)` }} />
+                  style={{ filter: `drop-shadow(0 0 6px ${withAlpha(P.okta, 0.4)})` }} />
                 <g transform={`translate(${mx},${my}) scale(0.64)`} stroke={P.okta} strokeWidth={2} fill="none" strokeLinecap="round" strokeLinejoin="round">
                   <g transform="translate(-12,-12)">
                     <path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z" />
@@ -283,11 +319,12 @@ export default function AtlasFabric() {
               </g>
             );
           })}
-          {/* nodes, premium glass cards */}
+          {/* nodes, premium glass cards. Card = real Okta name + role; the full
+              identity (id, lane, scope, connection, admin link) lives in the panel. */}
           {nodes.map((n) => {
-            const hl = hovered === n.id;
+            const hl = hovered === n.id || selected === n.id;
             const opacity = neighbors && !neighbors.has(n.id) ? 0.22 : 1;
-            const chipCX = -NW / 2 + 30;
+            const id = identityFor(n.id);
             return (
               <g key={n.id} className="fabric-node cursor-pointer" style={{ opacity }}
                 onPointerDown={() => onNodeDown(n.id)} onPointerEnter={() => setHovered(n.id)} onPointerLeave={() => setHovered(null)}
@@ -298,40 +335,20 @@ export default function AtlasFabric() {
                 {/* card body */}
                 <rect x={-NW / 2} y={-NH / 2} width={NW} height={NH} rx={14}
                   fill={`url(#${uid}-card)`} stroke={H[n.hue]} strokeOpacity={hl ? 1 : 0.55} strokeWidth={hl ? 2 : 1.3}
-                  style={{ filter: `drop-shadow(0 6px 14px rgba(0,0,0,0.28))${hl ? ` drop-shadow(0 0 12px ${H[n.hue]}88)` : ""}` }} />
+                  style={{ filter: `drop-shadow(0 6px 14px rgba(0,0,0,0.28))${hl ? ` drop-shadow(0 0 12px ${withAlpha(H[n.hue], 0.53)})` : ""}` }} />
                 {/* icon chip (vertically centered) */}
-                <rect x={chipCX - 18} y={-18} width={36} height={36} rx={9} fill={H[n.hue]} opacity={0.14} />
-                <rect x={chipCX - 18} y={-18} width={36} height={36} rx={9} fill="none" stroke={H[n.hue]} strokeOpacity={0.42} />
-                <g transform={`translate(${chipCX},0) scale(0.75)`} stroke={H[n.hue]} strokeWidth={2} fill="none" strokeLinecap="round" strokeLinejoin="round">
+                <rect x={CHIP_CX - 18} y={-18} width={36} height={36} rx={9} fill={H[n.hue]} opacity={0.14} />
+                <rect x={CHIP_CX - 18} y={-18} width={36} height={36} rx={9} fill="none" stroke={H[n.hue]} strokeOpacity={0.42} />
+                <g transform={`translate(${CHIP_CX},0) scale(0.75)`} stroke={H[n.hue]} strokeWidth={2} fill="none" strokeLinecap="round" strokeLinejoin="round">
                   <g transform="translate(-12,-12)">{glyph(n.icon)}</g>
                 </g>
-                {/* clean card: name + role only; the real Okta id lives outside the box now */}
-                <text x={chipCX + 30} y={-3} fontSize={15} fontWeight={700} fill={P.title}>{n.label}</text>
-                <text x={chipCX + 30} y={16} fontSize={11} fill={hl ? H[n.hue] : P.sub}>{n.role}</text>
-              </g>
-            );
-          })}
-          {/* the REAL Okta id, revealed OUTSIDE the card — floats in above it and lights
-              up on hover, or as the replay dot passes the node (never crammed in the box).
-              For agent nodes, the real name (Triage/Resolution/Fulfillment) reveals here
-              too, paired with the id, that pairing is the whole point: the static card
-              only ever says "Agent N," learning who it really is means looking at the id. */}
-          {nodes.filter((n) => n.idVal).map((n) => {
-            const active = hovered === n.id || passingId === n.id;
-            const pillW = n.realName ? 226 : 208, top = n.y - NH / 2 - 34, left = n.x - pillW / 2;
-            const labelText = n.realName ?? n.idKind;
-            const idX = left + (n.realName ? 68 : 56);
-            return (
-              <g key={`id-${n.id}`} className="pointer-events-none"
-                style={{ opacity: active ? 1 : 0, transition: "opacity 0.45s ease" }}>
-                <rect x={left} y={top} width={pillW} height={24} rx={12} fill={P.canvas}
-                  stroke={H[n.hue]} strokeOpacity={0.7}
-                  style={{ filter: active ? `drop-shadow(0 0 8px ${H[n.hue]}66)` : undefined }} />
-                <text x={left + 14} y={top + 13} fontSize={n.realName ? 10.5 : 8.5} fontWeight={n.realName ? 700 : 600}
-                  fill={n.realName ? P.title : P.dim}
-                  dominantBaseline="middle" style={{ letterSpacing: n.realName ? "0.01em" : "0.08em" }}>{labelText}</text>
-                <text x={idX} y={top + 13} fontSize={10} fill={H[n.hue]}
-                  dominantBaseline="middle" style={{ fontFamily: "var(--font-mono)", letterSpacing: "-0.02em" }}>{n.idVal}</text>
+                {/* real Okta name + role, both constrained to stay inside the card */}
+                <text x={TEXT_X} y={-4} fontSize={13} fontWeight={700} fill={P.title} {...fit(id.oktaName, 13)}>
+                  {id.oktaName}
+                </text>
+                <text x={TEXT_X} y={15} fontSize={11} fill={hl ? H[n.hue] : P.sub} {...fit(id.role, 11)}>
+                  {id.role}
+                </text>
               </g>
             );
           })}
@@ -343,6 +360,58 @@ export default function AtlasFabric() {
           )}
         </g>
       </svg>
+
+      {/* Okta identity panel, HTML, so text is always readable and never overlaps
+          the SVG. This is the "connect the dots" surface: it names the real Okta
+          object behind the highlighted node and links straight into the console. */}
+      <div className="pointer-events-none absolute bottom-14 left-4 z-10 w-[336px]">
+        {ident ? (
+          <div className="pointer-events-auto rounded-xl border bg-panel/95 p-3.5 shadow-[0_10px_30px_-12px_rgba(0,0,0,0.5)] backdrop-blur"
+            style={{ borderColor: withAlpha(panelHue, 0.5) }}>
+            <div className="flex items-start justify-between gap-2">
+              <div className="text-2xs font-semibold uppercase tracking-wider" style={{ color: panelHue }}>
+                {ident.kindLabel}
+              </div>
+              {selected && (
+                <button onClick={() => setSelected(null)} className="text-mute hover:text-ink" title="Clear">
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </div>
+            <div className="mt-1 text-[15px] font-semibold leading-tight text-bright">{ident.oktaName}</div>
+            {ident.hasOktaObject && ident.oktaId && (
+              <div className="mt-1 break-all font-mono text-2xs text-soft">{ident.oktaId}</div>
+            )}
+            {ident.breadcrumb && (
+              <div className="mt-1 text-2xs text-mute">{ident.breadcrumb}</div>
+            )}
+            {ident.facts && ident.facts.length > 0 && (
+              <ul className="mt-2.5 space-y-1">
+                {ident.facts.map((f, i) => (
+                  <li key={i} className="flex gap-1.5 text-2xs leading-snug text-body">
+                    <span className="mt-[5px] h-1 w-1 shrink-0 rounded-full" style={{ background: panelHue }} />
+                    <span>{f}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+            {ident.hasOktaObject && ident.adminUrl ? (
+              <a href={ident.adminUrl} target="_blank" rel="noopener noreferrer"
+                className="mt-3 inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-2xs font-medium transition-colors hover:brightness-110"
+                style={{ borderColor: withAlpha(panelHue, 0.5), color: panelHue }}>
+                <ExternalLink className="h-3 w-3" /> View in Okta admin
+              </a>
+            ) : (
+              <div className="mt-3 text-2xs italic text-mute">Not an Okta identity.</div>
+            )}
+          </div>
+        ) : (
+          <div className="pointer-events-auto rounded-xl border border-dashed border-line bg-panel/80 px-3.5 py-2.5 text-2xs leading-snug text-mute backdrop-blur">
+            Tap or hover a node to see the real Okta object behind it, its id, scope,
+            authorization-server lane, and a link into the admin console.
+          </div>
+        )}
+      </div>
 
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 border-t border-line px-4 py-2.5 text-2xs">
         {([["external", "External system"], ["service", "Service client"], ["agent", "AI agent (WLP)"], ["resource", "Resource"]] as const).map(([t, lbl]) => (
