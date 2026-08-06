@@ -90,9 +90,12 @@ Whether a ticket auto-resolves is **Claude's judgment, not a coin flip**. A Slac
 - **Runtime.** The one credential that reaches production (a Jira API token) is vaulted in Okta Privileged Access and released just in time, in exchange for the agent's own delegated authority. Nothing static lives in agent code.
 - **Governance.** Every hop, including the refused one, is a real event in the Okta System Log attributable to a named identity. Deactivate an agent and the next hand-off provably fails.
 
+See [docs/okta-security-value.md](docs/okta-security-value.md) for the verified-live evidence behind each of these four bullets.
+
 ## Documentation
 
 - **[docs/WHY-THIS-MATTERS.md](docs/WHY-THIS-MATTERS.md)** start here if you are not going to build it. What breaks without this, in plain terms.
+- **[docs/okta-security-value.md](docs/okta-security-value.md)** the evidence layer: what Okta mechanism backs each claim above, what this repo shows against a live tenant, and what failure mode is structurally closed.
 - **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** the technical walkthrough: exact token mechanics, the vaulted-secret release, and what this repo is honest about not doing yet.
 - **[docs/OKTA_SETUP.md](docs/OKTA_SETUP.md)** a from-scratch build checklist for your own tenant, written generically with no tenant-specific values.
 - **[DEPLOY.md](DEPLOY.md)** Render plus Vercel.

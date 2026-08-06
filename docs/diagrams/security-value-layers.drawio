@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mxfile host="drawio" version="26.0.0">
+  <diagram name="Security Value Layers" id="secval1">
+    <mxGraphModel dx="1400" dy="1000" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1700" pageHeight="980" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="title" value="What Okta actually provides, layer by layer, mapped to this repo" style="text;html=1;align=left;verticalAlign=middle;fontColor=#00033E;fontSize=17;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="20" y="12" width="900" height="34" as="geometry" />
+        </mxCell>
+
+        <!-- column headers -->
+        <mxCell id="h1" value="OKTA MECHANISM" style="text;html=1;align=left;verticalAlign=middle;fontColor=#5A5A5A;fontSize=11;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="300" y="72" width="420" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="h2" value="IN THIS REPO, VERIFIED LIVE" style="text;html=1;align=left;verticalAlign=middle;fontColor=#5A5A5A;fontSize=11;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="740" y="72" width="420" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="h3" value="FAILURE MODE CLOSED" style="text;html=1;align=left;verticalAlign=middle;fontColor=#5A5A5A;fontSize=11;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="1180" y="72" width="420" height="24" as="geometry" />
+        </mxCell>
+
+        <!-- Row 1: Identity -->
+        <mxCell id="r1lbl" value="1&#xa;IDENTITY" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#00033E;strokeColor=#00033E;fontColor=#FFFFFF;fontSize=15;fontStyle=1;arcSize=8;verticalAlign=middle;align=center;" vertex="1" parent="1">
+          <mxGeometry x="20" y="110" width="260" height="190" as="geometry" />
+        </mxCell>
+        <mxCell id="r1a" value="Every actor is a first-class Okta object: a workload principal for each agent, an OIDC client for the machine root. Its own key pair, owner, and lifecycle. Not a name in a config file." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ECE8E4;strokeColor=#E0DAD2;fontColor=#00033E;fontSize=12;arcSize=8;align=left;verticalAlign=middle;spacingLeft=14;spacingRight=10;" vertex="1" parent="1">
+          <mxGeometry x="300" y="110" width="420" height="190" as="geometry" />
+        </mxCell>
+        <mxCell id="r1b" value="Atlas Triage Agent and Atlas Resolution Agent (each wlp&#8230;, one ACTIVE RS256 key). Atlas Intake Service (0oa&#8230;) originates authority via client_credentials, the one grant an agent may never use." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ECE8E4;strokeColor=#E0DAD2;fontColor=#00033E;fontSize=12;arcSize=8;align=left;verticalAlign=middle;spacingLeft=14;spacingRight=10;" vertex="1" parent="1">
+          <mxGeometry x="740" y="110" width="420" height="190" as="geometry" />
+        </mxCell>
+        <mxCell id="r1c" value="A copied API key makes every caller look identical. Here, deactivating one agent stops that agent, and only that agent." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FBFBFA;strokeColor=#E0DAD2;fontColor=#00033E;fontSize=12;arcSize=8;align=left;verticalAlign=middle;spacingLeft=14;spacingRight=10;" vertex="1" parent="1">
+          <mxGeometry x="1180" y="110" width="420" height="190" as="geometry" />
+        </mxCell>
+
+        <!-- Row 2: Authorization -->
+        <mxCell id="r2lbl" value="2&#xa;AUTHORIZATION" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#00033E;strokeColor=#00033E;fontColor=#FFFFFF;fontSize=15;fontStyle=1;arcSize=8;verticalAlign=middle;align=center;" vertex="1" parent="1">
+          <mxGeometry x="20" y="320" width="260" height="190" as="geometry" />
+        </mxCell>
+        <mxCell id="r2a" value="Capability is a scope, granted per identity by policy on a Custom Authorization Server. Token exchange and jwt-bearer never down-scope: an ungrantable scope fails the whole request." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ECE8E4;strokeColor=#E0DAD2;fontColor=#00033E;fontSize=12;arcSize=8;align=left;verticalAlign=middle;spacingLeft=14;spacingRight=10;" vertex="1" parent="1">
+          <mxGeometry x="300" y="320" width="420" height="190" as="geometry" />
+        </mxCell>
+        <mxCell id="r2b" value="ticket.write exists on exactly one lane, and Triage is not a client there. Verified live: 400 invalid_scope, &#8220;The following scopes are not allowed for this request: [ticket.write].&#8221;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ECE8E4;strokeColor=#0131FF;strokeWidth=1.5;fontColor=#00033E;fontSize=12;arcSize=8;align=left;verticalAlign=middle;spacingLeft=14;spacingRight=10;" vertex="1" parent="1">
+          <mxGeometry x="740" y="320" width="420" height="190" as="geometry" />
+        </mxCell>
+        <mxCell id="r2c" value="There is no code path where the read-only agent quietly receives a smaller write grant. The boundary is enforced before a token exists." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FBFBFA;strokeColor=#E0DAD2;fontColor=#00033E;fontSize=12;arcSize=8;align=left;verticalAlign=middle;spacingLeft=14;spacingRight=10;" vertex="1" parent="1">
+          <mxGeometry x="1180" y="320" width="420" height="190" as="geometry" />
+        </mxCell>
+
+        <!-- Row 3: Runtime -->
+        <mxCell id="r3lbl" value="3&#xa;RUNTIME" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#00033E;strokeColor=#00033E;fontColor=#FFFFFF;fontSize=15;fontStyle=1;arcSize=8;verticalAlign=middle;align=center;" vertex="1" parent="1">
+          <mxGeometry x="20" y="530" width="260" height="190" as="geometry" />
+        </mxCell>
+        <mxCell id="r3a" value="The one static credential that reaches production is vaulted and released just-in-time, in exchange for the caller's own delegated token, not a role, not a password." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ECE8E4;strokeColor=#E0DAD2;fontColor=#00033E;fontSize=12;arcSize=8;align=left;verticalAlign=middle;spacingLeft=14;spacingRight=10;" vertex="1" parent="1">
+          <mxGeometry x="300" y="530" width="420" height="190" as="geometry" />
+        </mxCell>
+        <mxCell id="r3b" value="Okta Privileged Access holds the Jira API token. Resolution presents its own inbound A2A token as subject_token; its bootstrap token is rejected: &#8220;no delegation policy authorizes this token.&#8221;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ECE8E4;strokeColor=#0131FF;strokeWidth=1.5;fontColor=#00033E;fontSize=12;arcSize=8;align=left;verticalAlign=middle;spacingLeft=14;spacingRight=10;" vertex="1" parent="1">
+          <mxGeometry x="740" y="530" width="420" height="190" as="geometry" />
+        </mxCell>
+        <mxCell id="r3c" value="No agent, including the read-only one, can reach this credential by any route. Nothing sensitive lives in agent code or environment files." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FBFBFA;strokeColor=#E0DAD2;fontColor=#00033E;fontSize=12;arcSize=8;align=left;verticalAlign=middle;spacingLeft=14;spacingRight=10;" vertex="1" parent="1">
+          <mxGeometry x="1180" y="530" width="420" height="190" as="geometry" />
+        </mxCell>
+
+        <!-- Row 4: Governance -->
+        <mxCell id="r4lbl" value="4&#xa;GOVERNANCE" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#00033E;strokeColor=#00033E;fontColor=#FFFFFF;fontSize=15;fontStyle=1;arcSize=8;verticalAlign=middle;align=center;" vertex="1" parent="1">
+          <mxGeometry x="20" y="740" width="260" height="190" as="geometry" />
+        </mxCell>
+        <mxCell id="r4a" value="Every hop, granted or refused, mints a signed act claim (RFC 8693) and a real Okta System Log event: an independent, cryptographic record, not an application log." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ECE8E4;strokeColor=#E0DAD2;fontColor=#00033E;fontSize=12;arcSize=8;align=left;verticalAlign=middle;spacingLeft=14;spacingRight=10;" vertex="1" parent="1">
+          <mxGeometry x="300" y="740" width="420" height="190" as="geometry" />
+        </mxCell>
+        <mxCell id="r4b" value="app.oauth2.token.grant.id_jag on each delegation, app.oauth2.as.consent.grant.deny on the refusal, app.credential.vault.access on the release. act nests Resolution &#8592; Triage &#8592; Intake Service." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ECE8E4;strokeColor=#0131FF;strokeWidth=1.5;fontColor=#00033E;fontSize=12;arcSize=8;align=left;verticalAlign=middle;spacingLeft=14;spacingRight=10;" vertex="1" parent="1">
+          <mxGeometry x="740" y="740" width="420" height="190" as="geometry" />
+        </mxCell>
+        <mxCell id="r4c" value="The refusal shown in this demo is Okta's record, not this app's claim. Deactivate an agent and the next hand-off provably fails." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FBFBFA;strokeColor=#E0DAD2;fontColor=#00033E;fontSize=12;arcSize=8;align=left;verticalAlign=middle;spacingLeft=14;spacingRight=10;" vertex="1" parent="1">
+          <mxGeometry x="1180" y="740" width="420" height="190" as="geometry" />
+        </mxCell>
+
+        <mxCell id="footer" value="Every claim in the middle column is reproducible from this repo's code and the live Okta tenant, not asserted. See docs/okta-security-value.md." style="text;html=1;align=left;verticalAlign=middle;fontColor=#5A5A5A;fontSize=11;fontStyle=2;" vertex="1" parent="1">
+          <mxGeometry x="300" y="938" width="1000" height="24" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

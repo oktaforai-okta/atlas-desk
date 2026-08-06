@@ -2,7 +2,7 @@
 
 The technical explanation of how Atlas Service Desk works: the components, the exact token mechanics for agent-to-agent delegation, how the read/write capability boundary is enforced, and the vaulted-secret release that lets a fully autonomous agent reach a downstream credential with no human in the chain.
 
-To build this pattern in your own tenant, see [OKTA_SETUP.md](OKTA_SETUP.md). For the non-technical argument, see [WHY-THIS-MATTERS.md](WHY-THIS-MATTERS.md).
+To build this pattern in your own tenant, see [OKTA_SETUP.md](OKTA_SETUP.md). For the non-technical argument, see [WHY-THIS-MATTERS.md](WHY-THIS-MATTERS.md). For the verified-live evidence behind the table below, see [okta-security-value.md](okta-security-value.md).
 
 ## What Okta provides, at each layer
 

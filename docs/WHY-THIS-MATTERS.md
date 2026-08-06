@@ -64,4 +64,4 @@ Now they do.
 
 ---
 
-If you want to see the mechanics, read [ARCHITECTURE.md](ARCHITECTURE.md). If you want to build it in your own tenant, read [OKTA_SETUP.md](OKTA_SETUP.md).
+If you want the verified evidence behind these claims, read [okta-security-value.md](okta-security-value.md). If you want to see the mechanics, read [ARCHITECTURE.md](ARCHITECTURE.md). If you want to build it in your own tenant, read [OKTA_SETUP.md](OKTA_SETUP.md).

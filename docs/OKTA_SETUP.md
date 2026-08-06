@@ -2,7 +2,7 @@
 
 A from-scratch build checklist: what to create in Okta, in what order, and why, to reproduce the capability boundary this project demonstrates. Written generically; every ID below is a placeholder you replace with your own tenant's value.
 
-For *how* the resulting system behaves, see [ARCHITECTURE.md](ARCHITECTURE.md).
+For *how* the resulting system behaves, see [ARCHITECTURE.md](ARCHITECTURE.md). For *why* it is worth building, see [okta-security-value.md](okta-security-value.md).
 
 ## The idea you are building
 
