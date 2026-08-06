@@ -81,11 +81,13 @@ it leaves Agent 2, the vault, and Jira unlit.
 2. **`read_grant`** The Intake Service mints a bootstrap token scoped `ticket.read`, and Agent 1 holds it. A service client does this because workload principals may not use `client_credentials` at all (see below).
 3. **`jira_read`** Agent 1 performs a real `GET /rest/api/3/search` against the live project, looking for duplicate open tickets. Gated on the token actually carrying `ticket.read` (`okta/scope_guard.py`).
 4. **`classify`** Claude classifies the ticket and judges whether it is self-serviceable, given the duplicates Agent 1 found. Anything other than an explicit `true` routes to a human, so a malformed judgment can never auto-close a real ticket.
-5. **`write_denied`** Agent 1 attempts to obtain `ticket.write` and Okta refuses. The real HTTP status and error body are emitted for display. **This step is expected to fail; a run where it succeeds means the boundary is broken.**
-6. **`a2a_delegate`** Agent 1 exchanges its token for an ID-JAG targeting the delegation lane and Agent 2 redeems it. Result: a token whose `act` claim records Agent 1.
-7. **`write_grant`** Agent 2 exchanges *that* token for one on the write lane, carrying `ticket.write`. Same chain, new capability. Only Agent 2 can make this call.
+5. **`a2a_delegate`** Agent 1 exchanges its token for an ID-JAG targeting the delegation lane and Agent 2 redeems it. Result: a token whose `act` claim records Agent 1.
+6. **`write_grant`** Agent 2 exchanges *that* token for one on the write lane, carrying `ticket.write`. Same chain, new capability. Only Agent 2 can make this call.
+7. **`draft`** Claude drafts the resolution text (or the work notes, on the routed path).
 8. **`opa_vault`** Agent 2 retrieves the Jira credential from Okta Privileged Access, presenting its own inbound delegated token as the subject. See below.
 9. **`jira_write`** Agent 2 creates the issue, comments, and on the self-serviceable path transitions it to Done.
+
+The violation path shares steps 1-4, then instead attempts `write_denied` (Agent 1 asks Okta for `ticket.write` and is refused; the real HTTP status and error body are emitted for display) and stops at `blocked`. **`write_denied` succeeding would mean the boundary is broken** — it is expected to fail on every run that reaches it.
 
 ## Agent-to-agent delegation: the three-call mechanics
 
